@@ -7,8 +7,6 @@ edition = "2021"
 
 [dependencies]
 bevy = "0.7.0"
-churrschedule = { git="ssh://git@github.com/TheChurro/churrschedule.git" }
-churrui = { git="ssh://git@github.com/TheChurro/churrui.git" }
 
 [workspace]
 resolver = "2" # Important! wgpu/Bevy needs this!

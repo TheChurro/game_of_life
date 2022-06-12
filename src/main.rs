@@ -23,8 +23,6 @@ use tiling::{
 };
 
 extern crate bevy;
-extern crate churrschedule;
-extern crate churrui;
 
 mod simulation;
 mod tiling;
