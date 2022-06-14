@@ -54,6 +54,14 @@ impl TileShape {
             TileShape::Octagon => 8,
         }
     }
+
+    pub fn get_name(&self) -> String {
+        match self {
+            TileShape::Square => "Square".into(),
+            TileShape::Hexagon => "Hexagon".into(),
+            TileShape::Octagon => "Octagon".into(),
+        }
+    }
 }
 
 pub struct Tile {
@@ -84,12 +92,10 @@ impl Tiling {
     pub fn size(&self) -> Vec2 {
         match self.kind {
             TilingKind::Square => self.max_index.as_vec2(),
-            TilingKind::Hexagonal => {
-                Vec2::new(
-                    TileShape::Hexagon.get_width() * self.max_index.x as f32,
-                    TileShape::Hexagon.get_height() + (self.max_index.y - 1) as f32 * 1.5,
-                )
-            }
+            TilingKind::Hexagonal => Vec2::new(
+                TileShape::Hexagon.get_width() * self.max_index.x as f32,
+                TileShape::Hexagon.get_height() + (self.max_index.y - 1) as f32 * 1.5,
+            ),
             TilingKind::OctagonAndSquare => {
                 self.max_index.as_vec2() * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER
             }
