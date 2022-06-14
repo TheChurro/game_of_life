@@ -427,7 +427,11 @@ pub fn change_rules_event(
                             .map(|shape| {
                                 (
                                     shape.get_name(),
-                                    Color::BLACK,
+                                    if *shape == menu_data.active_shape {
+                                        Color::GRAY
+                                    } else {
+                                        Color::WHITE
+                                    },
                                     ShowRulesFor {
                                         shape: *shape,
                                         state: menu_data.active_state,
@@ -438,7 +442,7 @@ pub fn change_rules_event(
                         element.size.width,
                         HEADER_HEIGHT,
                         HEADER_FONT_SIZE,
-                        Color::WHITE,
+                        Color::BLACK,
                         HEADER_MARGIN,
                     );
                 }

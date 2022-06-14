@@ -578,9 +578,9 @@ fn process_simulation(mut sim_state: ResMut<SimulationState>) {
 }
 
 fn main() {
-    App::new()
-        .add_plugins(DefaultPlugins)
-        .insert_resource(VisualsCache {
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins);
+    app.insert_resource(VisualsCache {
             meshes: Default::default(),
             states: Default::default(),
             outline_image: Default::default(),
