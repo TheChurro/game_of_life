@@ -17,19 +17,13 @@ use bevy::{
     window::Windows,
     DefaultPlugins,
 };
-use menu_ui::{
-    on_rule_update, toggle_play_event, RuleUpdateEvent, RuleUpdateEventGenerator, TogglePlay,
-};
+
+use menus::MenuState;
 use simulation::SimulationState;
 use tiling::{TileShape, Tiling, TilingKind};
 
-use crate::menu_ui::{
-    change_rules_event, change_view_to, setup_menu_data, ChangeViewTo, MenuData, ShowRulesFor,
-};
-
 extern crate bevy;
 
-mod menu_ui;
 mod menus;
 mod simulation;
 mod tiling;
@@ -75,7 +69,7 @@ fn setup_world(
     mut visuals_cache: ResMut<VisualsCache>,
     sim_state: Res<SimulationState>,
     vis_state: Res<VisualState>,
-    menu_state: Res<MenuData>,
+    menu_state: Res<MenuState>,
 ) {
     for shape in [TileShape::Square, TileShape::Hexagon, TileShape::Octagon] {
         let mut verticies = vec![[0.0, 0.0, 0.0]];
@@ -360,11 +354,12 @@ fn main() {
     app.add_plugins(DefaultPlugins);
     app.add_plugin(
         ui::UIPlugin::new()
-            .register_event::<ChangeViewTo>()
-            .register_event::<ShowRulesFor>()
-            .register_event::<TogglePlay>()
-            .register_event_generator::<RuleUpdateEventGenerator>(),
+            .register_event::<menus::ChangeViewTo>()
+            .register_event::<menus::ShowRulesFor>()
+            .register_event::<menus::TogglePlay>()
+            .register_event_generator::<menus::RuleUpdateEventGenerator>(),
     );
+    app.add_plugin(menus::MenusPlugin);
     app.insert_resource(VisualsCache {
         meshes: Default::default(),
         states: Default::default(),
@@ -386,20 +381,10 @@ fn main() {
         max_scale: 100.0,
         add_debug: false,
     })
-    .insert_resource(MenuData {
-        active_shape: TileShape::Hexagon,
-        ..Default::default()
-    })
-    .add_startup_system(setup_menu_data)
-    .add_startup_system(setup_world.after(setup_menu_data))
-    .add_system(change_view_to)
-    .add_system(change_rules_event)
+    .add_startup_system(setup_world.after(menus::setup_menus))
     .add_system_to_stage(CoreStage::PreUpdate, input_system)
     .add_system(update_tile)
     .add_system(update_tile_visual.after(update_tile))
-    .add_system(change_view_to)
     .add_system(process_simulation)
-    .add_system(toggle_play_event)
-    .add_system(on_rule_update)
     .run()
 }
