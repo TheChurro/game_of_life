@@ -1,4 +1,4 @@
-use bevy::{math::IVec2, prelude::{Component}, utils::HashMap};
+use bevy::{math::IVec2, prelude::Component, utils::HashMap};
 
 use crate::tiling::{TileShape, Tiling, TilingKind};
 
@@ -328,7 +328,10 @@ impl SimulationState {
         self.pending_sets.clear();
 
         for (index, state) in &self.index_to_state {
-            if let Some(rules) = self.states.get(&self.tiling.get_tile_at_index(*index).shape) {
+            if let Some(rules) = self
+                .states
+                .get(&self.tiling.get_tile_at_index(*index).shape)
+            {
                 if let Some(next_value) = state.evaluate(rules) {
                     self.pending_sets.insert(*index, next_value);
                 }

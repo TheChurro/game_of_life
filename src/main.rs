@@ -4,45 +4,42 @@ use bevy::{
         mouse::{MouseMotion, MouseWheel},
         Input,
     },
-    math::{vec2, IVec2, Vec2, Vec3, Vec3Swizzles},
+    math::{IVec2, Vec2, Vec3},
     prelude::{
         App, AssetServer, Assets, Changed, Color, Commands, Component, CoreStage, Entity,
-        EventReader, Handle, Mesh, MouseButton, OrthographicCameraBundle,
-        ParallelSystemDescriptorCoercion, Query, Res, ResMut, Transform, With, Without, Image,
+        EventReader, Handle, Image, Mesh, MouseButton, OrthographicCameraBundle,
+        ParallelSystemDescriptorCoercion, Query, Res, ResMut, Transform, With, Without,
     },
-    render::{mesh::{Indices, PrimitiveTopology}},
+    render::mesh::{Indices, PrimitiveTopology},
     sprite::{ColorMaterial, MaterialMesh2dBundle, Mesh2dHandle},
     text::{Font, Text, Text2dBundle, TextAlignment, TextSection, TextStyle},
     utils::HashMap,
     window::Windows,
     DefaultPlugins,
 };
-use generic_ui::{number_field_handler, UiElement};
 use menu_ui::{
     on_rule_update, toggle_play_event, RuleUpdateEvent, RuleUpdateEventGenerator, TogglePlay,
 };
 use simulation::SimulationState;
 use tiling::{TileShape, Tiling, TilingKind};
 
-use crate::{
-    generic_ui::{
-        button_handler, linear_scroll_children_changed, linear_scroll_handler, position_on_added,
-        position_on_window_changed, update_sprite_to_match_layout,
-    },
-    menu_ui::{
-        change_rules_event, change_view_to, setup_menu_data, ChangeViewTo, MenuData, ShowRulesFor,
-    },
+use crate::menu_ui::{
+    change_rules_event, change_view_to, setup_menu_data, ChangeViewTo, MenuData, ShowRulesFor,
 };
 
 extern crate bevy;
 
-mod generic_ui;
 mod menu_ui;
+mod menus;
 mod simulation;
 mod tiling;
+mod ui;
 
 #[derive(Component)]
 struct VisualState {
+    mouse_down: bool,
+    mouse_moved: bool,
+
     cur_offset: Vec2,
     visual_grid_count: IVec2,
     scale: f32,
@@ -68,32 +65,6 @@ struct TileState {
     alive_count: u32,
     dead_count: u32,
     next: u32,
-}
-
-struct InputState {
-    is_mouse_down: bool,
-    mouse_moved: bool,
-    ui_element_clicked: Option<Entity>,
-    ui_element_clicked_buffered: Option<Entity>,
-    ui_element_selected: Option<Entity>,
-    ui_element_selected_buffered: Option<Entity>,
-    ui_element_scrolled: Option<Entity>,
-    last_mouse_position: Vec2,
-}
-
-impl Default for InputState {
-    fn default() -> Self {
-        Self {
-            is_mouse_down: false,
-            mouse_moved: false,
-            ui_element_clicked: None,
-            ui_element_clicked_buffered: None,
-            ui_element_selected: None,
-            ui_element_selected_buffered: None,
-            ui_element_scrolled: None,
-            last_mouse_position: Vec2::ZERO,
-        }
-    }
 }
 
 fn setup_world(
@@ -321,253 +292,60 @@ fn update_tile_visual(
     });
 }
 
-const SCROLL_SENSITIVITY: f32 = 0.5;
-
-fn find_event_targets(
-    entity: Entity,
-    valid_hover: bool,
-    mut hover_position: Vec2,
-    mut clear_hover_position: Vec2,
-    ui_element_query: &mut Query<(&Transform, &mut UiElement, Option<&Children>)>,
-) -> (bool, Option<Entity>, Option<Entity>, Option<Entity>) {
-    let mut is_hovered = false;
-    let mut is_hover_cleared = false;
-
-    let mut click_target = None;
-    let mut scroll_target = None;
-    let mut select_target = None;
-
-    let children =
-        if let Ok((transform, mut element, maybe_children)) = ui_element_query.get_mut(entity) {
-            // Check to see if we are hovered (or we were hovered last frame).
-            hover_position -= transform.translation.xy();
-            clear_hover_position -= transform.translation.xy();
-
-            is_hovered = valid_hover
-                && hover_position.x.abs() <= element.size.width / 2.0
-                && hover_position.y.abs() <= element.size.height / 2.0;
-            is_hover_cleared = clear_hover_position.x.abs() <= element.size.width / 2.0
-                && clear_hover_position.y.abs() <= element.size.height / 2.0;
-
-            // If this element can be hovered and hover has changed, update that state.
-            if element.hover_state.accepts_state {
-                if element.hover_state.current != is_hovered {
-                    element.hover_state.previous = !is_hovered;
-                    element.hover_state.current = is_hovered;
-                }
-            }
-
-            if is_hovered {
-                click_target = if element.click_state.accepts_state {
-                    Some(entity)
-                } else {
-                    None
-                };
-                scroll_target = if element.scroll_state.accepts_state {
-                    Some(entity)
-                } else {
-                    None
-                };
-                select_target = if element.selected_state.accepts_state {
-                    Some(entity)
-                } else {
-                    None
-                };
-            }
-
-            if let Some(children) = maybe_children {
-                children.iter().cloned().collect::<Vec<_>>()
-            } else {
-                Vec::new()
-            }
-        } else {
-            Vec::new()
-        };
-
-    // If we are hovered, or if last tick we should have been hovered,
-    // the pass the hover onto our children who will do the same checks.
-    if is_hovered || is_hover_cleared {
-        for child in children.iter().rev() {
-            let (_, child_click_target, child_scroll_target, child_select_target) =
-                find_event_targets(
-                    *child,
-                    is_hovered,
-                    hover_position,
-                    clear_hover_position,
-                    ui_element_query,
-                );
-            click_target = child_click_target.or(click_target);
-            scroll_target = child_scroll_target.or(scroll_target);
-            select_target = child_select_target.or(select_target);
-        }
-    }
-
-    (is_hovered, click_target, scroll_target, select_target)
-}
-
 fn input_system(
-    mouse_input: Res<Input<MouseButton>>,
-    mut mouse_state: ResMut<InputState>,
-    mut mouse_movements: EventReader<MouseMotion>,
-    mut mouse_wheel_movements: EventReader<MouseWheel>,
     mut vis_state: ResMut<VisualState>,
     mut sim_state: ResMut<SimulationState>,
+
+    mut input_state: ResMut<ui::InputState>,
+    mouse_input: Res<Input<MouseButton>>,
+    mouse_movements: EventReader<MouseMotion>,
+    mouse_wheel_movements: EventReader<MouseWheel>,
     windows: Res<Windows>,
-    ui_roots_query: Query<Entity, (With<UiElement>, Without<Parent>)>,
-    mut ui_element_query: Query<(&Transform, &mut UiElement, Option<&Children>)>,
+    ui_roots_query: Query<Entity, (With<ui::UiElement>, Without<Parent>)>,
+    ui_element_query: Query<(&Transform, &mut ui::UiElement, Option<&Children>)>,
 ) {
-    let mut scroll = Vec2::ZERO;
-    for motion in mouse_wheel_movements.iter() {
-        scroll += Vec2::new(motion.x, motion.y) * SCROLL_SENSITIVITY;
-    }
+    let processed_input = input_state.process_inputs(
+        &mouse_input,
+        mouse_movements,
+        mouse_wheel_movements,
+        &windows,
+        ui_roots_query,
+        ui_element_query,
+    );
 
-    // Adjust the scroll for our last scrolled entity.
-    if let Some(entity) = mouse_state.ui_element_scrolled {
-        if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
-            element.scroll_state.previous = element.scroll_state.current;
-            element.scroll_state.current = Vec2::ZERO;
-        }
-    }
-    mouse_state.ui_element_scrolled = None;
-
-    // Adjust the selected element state for the last selected entity.
-    if mouse_state.ui_element_selected != mouse_state.ui_element_selected_buffered {
-        if let Some(entity) = mouse_state.ui_element_selected_buffered {
-            if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
-                element.selected_state.previous = element.selected_state.current;
-                element.selected_state.current = false;
-            }
-        }
-    }
-    mouse_state.ui_element_selected_buffered = None;
-
-    let mut clear_select = false;
-    if let Some(entity) = mouse_state.ui_element_selected {
-        clear_select = mouse_input.just_pressed(MouseButton::Left);
-        if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
-            element.selected_state.previous = element.selected_state.current;
-            element.selected_state.current = !clear_select;
-        }
-    }
-    if clear_select {
-        mouse_state.ui_element_selected_buffered = mouse_state.ui_element_selected;
-        mouse_state.ui_element_selected = None;
-    }
-
-    // Adjust our click states
-    if mouse_state.ui_element_clicked != mouse_state.ui_element_clicked_buffered {
-        if let Some(entity) = mouse_state.ui_element_clicked_buffered {
-            if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
-                element.click_state.previous = element.click_state.current;
-                element.click_state.current = false;
-            }
-        }
-    }
-    mouse_state.ui_element_clicked_buffered = None;
-
-    let mut clear_click = false;
-    if let Some(entity) = mouse_state.ui_element_clicked {
-        clear_click = !mouse_input.pressed(MouseButton::Left);
-        if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
-            element.click_state.previous = element.click_state.current;
-            if clear_click {
-                element.click_state.current = false;
-            }
-        }
-    }
-    if clear_click {
-        mouse_state.ui_element_clicked_buffered = mouse_state.ui_element_clicked;
-        mouse_state.ui_element_clicked = None;
-    }
-
-    let mut over_ui = false;
-    // If we have a mouse position, we are going to go issue hovers, clicks, selects and scrolls
-    if let Some(mouse_position) = windows
-        .get_primary()
-        .and_then(|window| window.cursor_position())
-    {
-        let mouse_position =
-            mouse_position - Vec2::new(windows.primary().width(), windows.primary().height()) * 0.5;
-        let mut click_target = None;
-        let mut scroll_target = None;
-        let mut select_target = None;
-
-        for root in ui_roots_query.iter() {
-            let (is_hovered, root_click_target, root_scroll_target, root_select_target) =
-                find_event_targets(
-                    root,
-                    true,
-                    mouse_position,
-                    mouse_state.last_mouse_position,
-                    &mut ui_element_query,
-                );
-            click_target = root_click_target.or(click_target);
-            scroll_target = root_scroll_target.or(scroll_target);
-            select_target = root_select_target.or(select_target);
-
-            over_ui |= is_hovered;
-        }
-
-        if mouse_input.just_pressed(MouseButton::Left) {
-            if let Some(entity) = click_target {
-                if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
-                    element.click_state.previous = element.click_state.current;
-                    element.click_state.current = true;
-                }
-                mouse_state.ui_element_clicked = Some(entity);
-            } else if let Some(entity) = select_target {
-                if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
-                    element.selected_state.previous = element.selected_state.current;
-                    element.selected_state.current = true;
-                }
-                mouse_state.ui_element_selected = Some(entity);
-            }
-        } else if !mouse_input.pressed(MouseButton::Left) {
-            if let Some(entity) = scroll_target {
-                if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
-                    element.scroll_state.previous = element.scroll_state.current;
-                    element.scroll_state.current = scroll;
-                }
-                mouse_state.ui_element_scrolled = Some(entity);
-            }
-        }
-
-        mouse_state.last_mouse_position = mouse_position;
-    };
-
-    if over_ui {
+    if processed_input.over_some_ui {
         return;
     }
 
     if mouse_input.just_pressed(MouseButton::Left) {
-        mouse_state.is_mouse_down = true;
-        mouse_state.mouse_moved = false;
+        vis_state.mouse_down = true;
+        vis_state.mouse_moved = false;
     }
 
-    for motion in mouse_movements.iter() {
-        if motion.delta != Vec2::ZERO && mouse_state.is_mouse_down {
-            mouse_state.mouse_moved = true;
-            vis_state.cur_offset = sim_state.tiling.adjust_position(
-                motion.delta * vec2(-1.0, 1.0) / vis_state.scale + vis_state.cur_offset,
-            );
-        }
-    }
-
-    vis_state.scale = (vis_state.scale + scroll.y * SCROLL_SENSITIVITY)
+    vis_state.scale = (vis_state.scale + processed_input.scroll.y)
         .max(vis_state.min_scale)
         .min(vis_state.max_scale);
 
-    if mouse_input.just_released(MouseButton::Left) {
-        mouse_state.is_mouse_down = false;
-        if !mouse_state.mouse_moved {
-            let primary_window = windows.primary();
-            if let Some(position) = primary_window.cursor_position() {
-                let position =
-                    position - Vec2::new(primary_window.width(), primary_window.height()) / 2.0;
-                let adjusted_position = position / vis_state.scale + vis_state.cur_offset;
-                let index = sim_state.tiling.get_index_for_position(adjusted_position);
-                let target_state = (sim_state.get_at(index) + 1) % sim_state.num_states as u32;
-                sim_state.set_at(index, target_state);
+    if vis_state.mouse_down {
+        if processed_input.movement.length_squared() > 0.001 {
+            vis_state.mouse_moved = true;
+            vis_state.cur_offset = sim_state.tiling.adjust_position(
+                processed_input.movement * Vec2::new(-1.0, 1.0) / vis_state.scale + vis_state.cur_offset,
+            );
+        }
+
+        if mouse_input.just_released(MouseButton::Left) {
+            vis_state.mouse_down = false;
+            if !vis_state.mouse_moved {
+                let primary_window = windows.primary();
+                if let Some(position) = primary_window.cursor_position() {
+                    let position =
+                        position - Vec2::new(primary_window.width(), primary_window.height()) / 2.0;
+                    let adjusted_position = position / vis_state.scale + vis_state.cur_offset;
+                    let index = sim_state.tiling.get_index_for_position(adjusted_position);
+                    let target_state = (sim_state.get_at(index) + 1) % sim_state.num_states as u32;
+                    sim_state.set_at(index, target_state);
+                }
             }
         }
     }
@@ -580,53 +358,48 @@ fn process_simulation(mut sim_state: ResMut<SimulationState>) {
 fn main() {
     let mut app = App::new();
     app.add_plugins(DefaultPlugins);
+    app.add_plugin(
+        ui::UIPlugin::new()
+            .register_event::<ChangeViewTo>()
+            .register_event::<ShowRulesFor>()
+            .register_event::<TogglePlay>()
+            .register_event_generator::<RuleUpdateEventGenerator>(),
+    );
     app.insert_resource(VisualsCache {
-            meshes: Default::default(),
-            states: Default::default(),
-            outline_image: Default::default(),
-            font: Handle::default(),
-        })
-        .insert_resource(SimulationState::new(Tiling {
-            kind: TilingKind::Hexagonal,
-            max_index: IVec2::new(50, 50),
-        }))
-        .insert_resource(VisualState {
-            cur_offset: Vec2::ZERO,
-            visual_grid_count: IVec2::new(25, 25),
-            scale: 50.0,
-            min_scale: 25.0,
-            max_scale: 100.0,
-            add_debug: false,
-        })
-        .insert_resource(MenuData {
-            active_shape: TileShape::Hexagon,
-            ..Default::default()
-        })
-        .insert_resource(InputState::default())
-        .add_event::<ChangeViewTo>()
-        .add_event::<ShowRulesFor>()
-        .add_event::<TogglePlay>()
-        .add_event::<RuleUpdateEvent>()
-        .add_startup_system(setup_menu_data)
-        .add_startup_system(setup_world.after(setup_menu_data))
-        .add_system(change_view_to)
-        .add_system(change_rules_event)
-        .add_system_to_stage(CoreStage::PreUpdate, input_system)
-        .add_system(update_tile)
-        .add_system(update_tile_visual.after(update_tile))
-        .add_system(update_sprite_to_match_layout)
-        .add_system(linear_scroll_children_changed)
-        .add_system(linear_scroll_handler)
-        .add_system(change_view_to)
-        .add_system(button_handler::<ChangeViewTo>)
-        .add_system(button_handler::<ShowRulesFor>)
-        .add_system(button_handler::<TogglePlay>)
-        .add_system(button_handler::<RuleUpdateEvent>)
-        .add_system(number_field_handler::<RuleUpdateEventGenerator>)
-        .add_system(position_on_added)
-        .add_system(position_on_window_changed)
-        .add_system(process_simulation)
-        .add_system(toggle_play_event)
-        .add_system(on_rule_update)
-        .run()
+        meshes: Default::default(),
+        states: Default::default(),
+        outline_image: Default::default(),
+        font: Handle::default(),
+    })
+    .insert_resource(SimulationState::new(Tiling {
+        kind: TilingKind::Hexagonal,
+        max_index: IVec2::new(50, 50),
+    }))
+    .insert_resource(VisualState {
+        mouse_down: false,
+        mouse_moved: false,
+
+        cur_offset: Vec2::ZERO,
+        visual_grid_count: IVec2::new(25, 25),
+        scale: 50.0,
+        min_scale: 25.0,
+        max_scale: 100.0,
+        add_debug: false,
+    })
+    .insert_resource(MenuData {
+        active_shape: TileShape::Hexagon,
+        ..Default::default()
+    })
+    .add_startup_system(setup_menu_data)
+    .add_startup_system(setup_world.after(setup_menu_data))
+    .add_system(change_view_to)
+    .add_system(change_rules_event)
+    .add_system_to_stage(CoreStage::PreUpdate, input_system)
+    .add_system(update_tile)
+    .add_system(update_tile_visual.after(update_tile))
+    .add_system(change_view_to)
+    .add_system(process_simulation)
+    .add_system(toggle_play_event)
+    .add_system(on_rule_update)
+    .run()
 }

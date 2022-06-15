@@ -3,22 +3,20 @@ use bevy::{
     hierarchy::{BuildChildren, ChildBuilder, DespawnRecursiveExt},
     math::{IVec2, Size, Vec3},
     prelude::{
-        AssetServer, Color, Commands, Component, Entity, EventReader, EventWriter, Handle, Image,
-        Query, Res, ResMut, Transform, With, Assets,
+        AssetServer, Assets, Color, Commands, Component, Entity, EventReader, EventWriter, Handle,
+        Image, Query, Res, ResMut, Transform, With,
     },
-    sprite::{Sprite, SpriteBundle, ColorMaterial},
+    sprite::{ColorMaterial, Sprite, SpriteBundle},
     text::{Font, HorizontalAlign, Text, Text2dBundle, TextAlignment, TextSection, TextStyle},
     transform::TransformBundle,
     utils::HashMap,
 };
 
 use crate::{
-    generic_ui::{
-        AnchoredUi, Button, LayoutDirection, NumberField, NumberedEventGenerator, UiElement,
-        UiLinearScroll, UiStateDetails,
-    },
     simulation::{RuleUpdateTarget, SimulationState},
-    tiling::{TileShape, Tiling, TilingKind}, VisualsCache,
+    tiling::{TileShape, Tiling, TilingKind},
+    ui::*,
+    VisualsCache,
 };
 
 #[derive(Component, Clone, Copy)]
