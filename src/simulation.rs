@@ -1,6 +1,6 @@
 use bevy::{math::IVec2, prelude::Component, utils::HashMap};
 
-use crate::tiling::{TileShape, Tiling, TilingKind};
+use crate::tiling::{EquilateralDirection, RightTriangleRotation, TileShape, Tiling, TilingKind};
 
 #[derive(Component)]
 pub struct SimulationState {
@@ -210,6 +210,65 @@ fn get_default_rules_for_tiling(kind: TilingKind) -> HashMap<TileShape, Vec<Stat
                 ],
             );
         }
+        TilingKind::EquilateralTriangular => {
+            for direction in [EquilateralDirection::Up, EquilateralDirection::Down] {
+                map.insert(
+                    TileShape::EquilateralTriangle(direction),
+                    vec![
+                        StateRules {
+                            default_state: 0,
+                            rules: vec![StateRule {
+                                min: 3,
+                                max: 3,
+                                neighbor_states_to_count: vec![1],
+                                output: 1,
+                            }],
+                        },
+                        StateRules {
+                            default_state: 0,
+                            rules: vec![StateRule {
+                                min: 3,
+                                max: 3,
+                                neighbor_states_to_count: vec![1],
+                                output: 1,
+                            }],
+                        },
+                    ],
+                );
+            }
+        }
+        TilingKind::RightTriangular => {
+            for rotation in [
+                RightTriangleRotation::Zero,
+                RightTriangleRotation::One,
+                RightTriangleRotation::Two,
+                RightTriangleRotation::Three,
+            ] {
+                map.insert(
+                    TileShape::RightTriangle(rotation),
+                    vec![
+                        StateRules {
+                            default_state: 0,
+                            rules: vec![StateRule {
+                                min: 3,
+                                max: 3,
+                                neighbor_states_to_count: vec![1],
+                                output: 1,
+                            }],
+                        },
+                        StateRules {
+                            default_state: 0,
+                            rules: vec![StateRule {
+                                min: 3,
+                                max: 3,
+                                neighbor_states_to_count: vec![1],
+                                output: 1,
+                            }],
+                        },
+                    ],
+                );
+            }
+        }
     }
     map
 }
@@ -235,6 +294,10 @@ impl SimulationState {
 
     pub fn get_shapes(&self) -> Vec<TileShape> {
         self.states.keys().cloned().collect()
+    }
+
+    pub fn get_num_states_for_shape(&self, shape: TileShape) -> u32 {
+        self.states.get(&shape).map(|rules| rules.len() as u32).unwrap_or(0)
     }
 
     pub fn clone_rules_for_shape(&self, shape: TileShape) -> Vec<StateRules> {

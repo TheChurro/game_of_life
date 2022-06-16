@@ -1,6 +1,15 @@
-use bevy::{prelude::{Component, Color, ResMut, Assets, EventWriter, EventReader}, sprite::ColorMaterial, math::IVec2};
+use bevy::{
+    math::{IVec2, Vec2},
+    prelude::{Assets, Color, Component, EventReader, EventWriter, ResMut},
+    sprite::ColorMaterial,
+};
 
-use crate::{tiling::{TileShape, TilingKind, Tiling}, simulation::{RuleUpdateTarget, SimulationState}, ui::NumberedEventGenerator, VisualsCache};
+use crate::{
+    simulation::{RuleUpdateTarget, SimulationState},
+    tiling::{EquilateralDirection, RightTriangleRotation, TileShape, Tiling, TilingKind},
+    ui::NumberedEventGenerator,
+    VisualsCache,
+};
 
 use super::MenuState;
 
@@ -71,7 +80,8 @@ pub(super) fn change_view_to(
     for event in events.iter() {
         *sim_state = SimulationState::new(Tiling {
             kind: event.0,
-            max_index: IVec2::new(50, 50),
+            max_index: IVec2::new(52, 52),
+            offset: Vec2::ZERO,
         });
 
         change_rules_view_events.send(ShowRulesFor {
@@ -79,6 +89,12 @@ pub(super) fn change_view_to(
                 TilingKind::Square => TileShape::Square,
                 TilingKind::Hexagonal => TileShape::Hexagon,
                 TilingKind::OctagonAndSquare => TileShape::Octagon,
+                TilingKind::EquilateralTriangular => {
+                    TileShape::EquilateralTriangle(EquilateralDirection::Up)
+                }
+                TilingKind::RightTriangular => {
+                    TileShape::RightTriangle(RightTriangleRotation::Zero)
+                }
             },
             state: 0u32,
         });
@@ -92,7 +108,7 @@ pub(super) fn toggle_play_event(
     for event in events.iter() {
         match event {
             TogglePlay::Toggle => {
-                sim_state.run_every = if sim_state.run_every == 0 { 10 } else { 0 }
+                sim_state.run_every = if sim_state.run_every == 0 { 2 } else { 0 }
             }
             TogglePlay::Step => {
                 sim_state.step += 1;

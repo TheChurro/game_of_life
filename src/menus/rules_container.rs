@@ -1,9 +1,16 @@
-use bevy::{prelude::{Component, EventReader, Query, Entity, With, Commands, ResMut, Res, Color}, hierarchy::{DespawnRecursiveExt, BuildChildren}, math::Size, sprite::SpriteBundle};
+use bevy::{
+    hierarchy::{BuildChildren, DespawnRecursiveExt},
+    math::Size,
+    prelude::{Color, Commands, Component, Entity, EventReader, Query, Res, ResMut, With},
+    sprite::SpriteBundle,
+};
 
-use crate::{ui::*, simulation::{SimulationState, RuleUpdateTarget}};
+use crate::{
+    simulation::{RuleUpdateTarget, SimulationState},
+    ui::*,
+};
 
-use super::{MenuState, events::*};
-
+use super::{events::*, MenuState};
 
 #[derive(Component)]
 pub struct RulesContainer {}

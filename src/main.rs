@@ -20,7 +20,7 @@ use bevy::{
 
 use menus::MenuState;
 use simulation::SimulationState;
-use tiling::{TileShape, Tiling, TilingKind};
+use tiling::{TileShape, Tiling, TilingKind, EquilateralDirection, RightTriangleRotation, OCTAGON_SQUARE_DIFFERENCE_OF_CENTER};
 
 extern crate bevy;
 
@@ -28,6 +28,7 @@ mod menus;
 mod simulation;
 mod tiling;
 mod ui;
+mod visuals;
 
 #[derive(Component)]
 struct VisualState {
@@ -85,6 +86,53 @@ fn setup_world(
             uvs.push([i as f32 / (num_sides - 1) as f32, 0.0]);
             normals.push([0.0, 0.0, 1.0]);
             indicies.extend_from_slice(&[0, 1 + i, 1 + ((i + 1) % num_sides)]);
+        }
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.set_indices(Some(Indices::U32(indicies)));
+
+        let handle = meshes.add(mesh);
+        visuals_cache.meshes.insert(shape, handle.into());
+    }
+
+    // Now we handle the angles for the two different kinds of equilateral triangles
+    for direction in [EquilateralDirection::Down, EquilateralDirection::Up] {
+        let shape = TileShape::EquilateralTriangle(direction);
+        let mut verticies = vec![[0.0, 0.0, 0.0]];
+        let mut normals = vec![[0.0, 0.0, 1.0]];
+        let mut uvs = vec![[0.5, 0.5]];
+        let mut indicies = vec![];
+        let num_sides = shape.get_side_count();
+        let angle = std::f32::consts::TAU / num_sides as f32;
+        for i in 0..num_sides {
+            let cur_angle = angle * i as f32 + direction.angle();
+            let radius = shape.get_radius();
+            verticies.push([radius * cur_angle.cos(), radius * cur_angle.sin(), 0.0]);
+            uvs.push([i as f32 / (num_sides - 1) as f32, 0.0]);
+            normals.push([0.0, 0.0, 1.0]);
+            indicies.extend_from_slice(&[0, 1 + i, 1 + ((i + 1) % num_sides)]);
+        }
+        let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_UV_0, uvs);
+        mesh.insert_attribute(Mesh::ATTRIBUTE_NORMAL, normals);
+        mesh.set_indices(Some(Indices::U32(indicies)));
+
+        let handle = meshes.add(mesh);
+        visuals_cache.meshes.insert(shape, handle.into());
+    }
+
+    // Now add handle for the angles of the four different kinds of right triangles
+    for rotation in [RightTriangleRotation::Zero, RightTriangleRotation::One, RightTriangleRotation::Two, RightTriangleRotation::Three] {
+        let shape = TileShape::RightTriangle(rotation);
+        let mut verticies = vec![[0.0, 0.0, 0.0], [-OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, 0.0], [-OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, -OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, 0.0], [OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, -OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, 0.0]];
+        let normals = vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]];
+        let uvs = vec![[1.0, 1.0], [0.0, 1.0], [0.0, 0.0], [1.0, 0.0]];
+        let indicies = vec![0, 1, 2, 0, 2, 3];
+        for vertex in &mut verticies {
+            *vertex = rotation.rotate(*vertex);
         }
         let mut mesh = Mesh::new(PrimitiveTopology::TriangleList);
         mesh.insert_attribute(Mesh::ATTRIBUTE_POSITION, verticies);
@@ -324,7 +372,8 @@ fn input_system(
         if processed_input.movement.length_squared() > 0.001 {
             vis_state.mouse_moved = true;
             vis_state.cur_offset = sim_state.tiling.adjust_position(
-                processed_input.movement * Vec2::new(-1.0, 1.0) / vis_state.scale + vis_state.cur_offset,
+                processed_input.movement * Vec2::new(-1.0, 1.0) / vis_state.scale
+                    + vis_state.cur_offset,
             );
         }
 
@@ -336,9 +385,9 @@ fn input_system(
                     let position =
                         position - Vec2::new(primary_window.width(), primary_window.height()) / 2.0;
                     let adjusted_position = position / vis_state.scale + vis_state.cur_offset;
-                    let index = sim_state.tiling.get_index_for_position(adjusted_position);
-                    let target_state = (sim_state.get_at(index) + 1) % sim_state.num_states as u32;
-                    sim_state.set_at(index, target_state);
+                    let tile = sim_state.tiling.get_tile_containing(adjusted_position);
+                    let target_state = (sim_state.get_at(tile.index) + 1) % sim_state.get_num_states_for_shape(tile.shape);
+                    sim_state.set_at(tile.index, target_state);
                 }
             }
         }
@@ -369,13 +418,14 @@ fn main() {
     .insert_resource(SimulationState::new(Tiling {
         kind: TilingKind::Hexagonal,
         max_index: IVec2::new(50, 50),
+        offset: Vec2::ZERO,
     }))
     .insert_resource(VisualState {
         mouse_down: false,
         mouse_moved: false,
 
         cur_offset: Vec2::ZERO,
-        visual_grid_count: IVec2::new(25, 25),
+        visual_grid_count: IVec2::new(52, 52),
         scale: 50.0,
         min_scale: 25.0,
         max_scale: 100.0,

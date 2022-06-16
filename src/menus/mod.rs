@@ -1,11 +1,13 @@
 mod events;
-mod state;
 mod rules_container;
+mod state;
 
 use bevy::prelude::Plugin;
-pub use state::{MenuState, setup_menus};
-pub use events::{ChangeViewTo, RuleUpdateEvent, RuleUpdateEventGenerator, ShowRulesFor, TogglePlay};
+pub use events::{
+    ChangeViewTo, RuleUpdateEvent, RuleUpdateEventGenerator, ShowRulesFor, TogglePlay,
+};
 pub use rules_container::RulesContainer;
+pub use state::{setup_menus, MenuState};
 
 const HEADER_MARGIN: f32 = 20.0;
 const HEADER_FONT_SIZE: f32 = 20.0;

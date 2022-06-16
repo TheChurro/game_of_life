@@ -35,7 +35,9 @@ const SCROLL_SENSITIVITY: f32 = 0.5;
 
 fn update_hovers(ui_element_query: &mut Query<(&Transform, &mut UiElement, Option<&Children>)>) {
     ui_element_query.for_each_mut(|(_, mut element, _)| {
-        if element.hover_state.accepts_state && (element.hover_state.current || element.hover_state.previous) {
+        if element.hover_state.accepts_state
+            && (element.hover_state.current || element.hover_state.previous)
+        {
             element.hover_state.previous = element.hover_state.current;
             element.hover_state.current = false;
         }

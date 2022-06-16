@@ -1,4 +1,4 @@
-use bevy::prelude::{App, Component, Plugin, ParallelSystemDescriptorCoercion};
+use bevy::prelude::{App, Component, ParallelSystemDescriptorCoercion, Plugin};
 
 pub mod anchor;
 pub mod button;
@@ -48,7 +48,9 @@ impl Plugin for UIPlugin {
         app.add_system(anchor::position_on_added);
         app.add_system(anchor::position_on_window_changed);
         app.add_system(scroll_view::linear_scroll_children_changed);
-        app.add_system(scroll_view::linear_scroll_handler.after(anchor::position_on_window_changed));
+        app.add_system(
+            scroll_view::linear_scroll_handler.after(anchor::position_on_window_changed),
+        );
         for func in &self.registry_functions {
             func(app);
         }

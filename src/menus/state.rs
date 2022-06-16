@@ -1,9 +1,19 @@
-use bevy::{prelude::{Handle, Image, Color, Transform, Component, ResMut, AssetServer, Res, Commands, EventWriter}, utils::HashMap, ecs::system::EntityCommands, text::{Font, TextAlignment, HorizontalAlign, Text2dBundle, Text, TextSection, TextStyle}, math::{Vec3, Size}, sprite::{SpriteBundle, Sprite}, hierarchy::{BuildChildren, ChildBuilder}, transform::TransformBundle};
+use bevy::{
+    ecs::system::EntityCommands,
+    hierarchy::{BuildChildren, ChildBuilder},
+    math::{Size, Vec3},
+    prelude::{
+        AssetServer, Color, Commands, Component, EventWriter, Handle, Image, Res, ResMut, Transform,
+    },
+    sprite::{Sprite, SpriteBundle},
+    text::{Font, HorizontalAlign, Text, Text2dBundle, TextAlignment, TextSection, TextStyle},
+    transform::TransformBundle,
+    utils::HashMap,
+};
 
 use crate::{tiling::*, ui::*};
 
 use super::{events::*, RulesContainer};
-
 
 pub struct MenuState {
     pub button: Handle<Image>,
@@ -62,56 +72,54 @@ impl MenuState {
         font_color: Color,
         margin: f32,
     ) {
-        root
-            .insert_bundle(SpriteBundle {
-                sprite: Sprite {
-                    color: background,
-                    ..Default::default()
-                },
-                texture: self.button.clone(),
+        root.insert_bundle(SpriteBundle {
+            sprite: Sprite {
+                color: background,
                 ..Default::default()
-            })
-            .insert(UiElement {
-                size: Size::new(width, height),
-                ..Default::default()
-            })
-            .with_children(|choice_builder| {
-                let num = data.len() as f32;
-                let width = width / num;
-                for (i, (text, color, event)) in data.drain(..).enumerate() {
-                    choice_builder
-                        .spawn_bundle(SpriteBundle {
-                            sprite: Sprite {
-                                color,
-                                ..Default::default()
-                            },
-                            texture: self.button.clone(),
-                            transform: Transform::from_translation(Vec3::new(
-                                width * (i as f32 - (num - 1.0) * 0.5),
-                                0.0,
-                                1.0,
-                            )),
+            },
+            texture: self.button.clone(),
+            ..Default::default()
+        })
+        .insert(UiElement {
+            size: Size::new(width, height),
+            ..Default::default()
+        })
+        .with_children(|choice_builder| {
+            let num = data.len() as f32;
+            let width = width / num;
+            for (i, (text, color, event)) in data.drain(..).enumerate() {
+                choice_builder
+                    .spawn_bundle(SpriteBundle {
+                        sprite: Sprite {
+                            color,
                             ..Default::default()
-                        })
-                        .insert(UiElement {
-                            size: Size::new(width - margin, height - margin),
-                            hover_state: UiStateDetails {
-                                accepts_state: true,
-                                ..Default::default()
-                            },
-                            click_state: UiStateDetails {
-                                accepts_state: true,
-                                ..Default::default()
-                            },
+                        },
+                        texture: self.button.clone(),
+                        transform: Transform::from_translation(Vec3::new(
+                            width * (i as f32 - (num - 1.0) * 0.5),
+                            0.0,
+                            1.0,
+                        )),
+                        ..Default::default()
+                    })
+                    .insert(UiElement {
+                        size: Size::new(width - margin, height - margin),
+                        hover_state: UiStateDetails {
+                            accepts_state: true,
                             ..Default::default()
-                        })
-                        .insert(Button::new(self.button.clone(), event))
-                        .with_children(|button_text| {
-                            button_text
-                                .spawn_bundle(self.get_text_bundle(text, font_size, font_color));
-                        });
-                }
-            });
+                        },
+                        click_state: UiStateDetails {
+                            accepts_state: true,
+                            ..Default::default()
+                        },
+                        ..Default::default()
+                    })
+                    .insert(Button::new(self.button.clone(), event))
+                    .with_children(|button_text| {
+                        button_text.spawn_bundle(self.get_text_bundle(text, font_size, font_color));
+                    });
+            }
+        });
     }
 
     /// Spawn a horizontally layed out group with the given label prefixing
@@ -125,8 +133,7 @@ impl MenuState {
         label_color: Color,
         f: impl FnOnce(&Self, &mut ChildBuilder),
     ) {
-        root
-            .insert_bundle(TransformBundle::default())
+        root.insert_bundle(TransformBundle::default())
             .insert(UiElement {
                 size,
                 ..Default::default()
@@ -137,7 +144,11 @@ impl MenuState {
             })
             .with_children(|child_builder| {
                 child_builder
-                    .spawn_bundle(self.get_text_bundle(label, super::REGULAR_FONT_SIZE, label_color))
+                    .spawn_bundle(self.get_text_bundle(
+                        label,
+                        super::REGULAR_FONT_SIZE,
+                        label_color,
+                    ))
                     .insert(UiElement {
                         size: Size::new(100.0, size.height - super::REGULAR_MARGIN),
                         ..Default::default()
@@ -216,6 +227,16 @@ pub fn setup_menus(
                 "Octagonal".into(),
                 Color::rgb(0.25, 0.25, 0.5),
                 ChangeViewTo(TilingKind::OctagonAndSquare),
+            ),
+            (
+                "Equilateral Triangular".into(),
+                Color::rgb(0.5, 0.25, 0.5),
+                ChangeViewTo(TilingKind::EquilateralTriangular),
+            ),
+            (
+                "Right Triangular".into(),
+                Color::rgb(0.25, 0.5, 0.5),
+                ChangeViewTo(TilingKind::RightTriangular),
             ),
         ],
         500.0,

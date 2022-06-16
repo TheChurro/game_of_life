@@ -1,3 +1,5 @@
+use std::f32::consts::FRAC_PI_3;
+
 use bevy::math::{IVec2, Quat, Vec2, Vec3Swizzles};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -5,12 +7,49 @@ pub enum TilingKind {
     Square,
     Hexagonal,
     OctagonAndSquare,
+    EquilateralTriangular,
+    RightTriangular,
 }
 
 #[derive(Debug)]
 pub struct Tiling {
     pub kind: TilingKind,
     pub max_index: IVec2,
+    pub offset: Vec2,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum EquilateralDirection {
+    Up,
+    Down,
+}
+
+impl EquilateralDirection {
+    pub fn angle(self) -> f32 {
+        match self {
+            EquilateralDirection::Up => -std::f32::consts::FRAC_PI_6,
+            EquilateralDirection::Down => std::f32::consts::FRAC_PI_6,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum RightTriangleRotation {
+    Zero,
+    One,
+    Two,
+    Three,
+}
+
+impl RightTriangleRotation {
+    pub fn rotate(self, vec: [f32; 3]) -> [f32; 3] {
+        match self {
+            RightTriangleRotation::Zero => vec,
+            RightTriangleRotation::One => [vec[1], -vec[0], vec[2]],
+            RightTriangleRotation::Two => [-vec[0], -vec[1], vec[2]],
+            RightTriangleRotation::Three => [-vec[1], vec[0], vec[2]],
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -18,6 +57,8 @@ pub enum TileShape {
     Square,
     Hexagon,
     Octagon,
+    EquilateralTriangle(EquilateralDirection),
+    RightTriangle(RightTriangleRotation),
 }
 
 impl TileShape {
@@ -27,6 +68,8 @@ impl TileShape {
             TileShape::Square => 1.0,
             TileShape::Hexagon => 2.0,
             TileShape::Octagon => 1.0 + std::f32::consts::SQRT_2,
+            TileShape::EquilateralTriangle(_) => 1.5,
+            TileShape::RightTriangle(_) => OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
         }
     }
 
@@ -36,6 +79,8 @@ impl TileShape {
             TileShape::Square => 1.0,
             TileShape::Hexagon => 3.0f32.sqrt(),
             TileShape::Octagon => 1.0 + std::f32::consts::SQRT_2,
+            TileShape::EquilateralTriangle(_) => TileShape::Hexagon.get_width(),
+            TileShape::RightTriangle(_) => OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
         }
     }
 
@@ -44,14 +89,20 @@ impl TileShape {
             TileShape::Square => std::f32::consts::SQRT_2 / 2.0,
             TileShape::Hexagon => 1.0,
             TileShape::Octagon => (1.0 + std::f32::consts::FRAC_1_SQRT_2).sqrt(),
+            TileShape::EquilateralTriangle(_) => 1.0,
+            // This is a fib.. but there isn't a great value for "radius" since this is not a n
+            // equilateral shape unlike the other tile shapes...
+            TileShape::RightTriangle(_) => 1.0,
         }
     }
 
-    pub fn get_side_count(&self) -> u32 {
+    pub const fn get_side_count(&self) -> u32 {
         match self {
             TileShape::Square => 4,
             TileShape::Hexagon => 6,
             TileShape::Octagon => 8,
+            TileShape::EquilateralTriangle(_) => 3,
+            TileShape::RightTriangle(_) => 3,
         }
     }
 
@@ -60,6 +111,8 @@ impl TileShape {
             TileShape::Square => "Square".into(),
             TileShape::Hexagon => "Hexagon".into(),
             TileShape::Octagon => "Octagon".into(),
+            TileShape::EquilateralTriangle(_) => "Equilateral Triangle".into(),
+            TileShape::RightTriangle(_) => "Right Triangle".into(),
         }
     }
 }
@@ -99,12 +152,27 @@ impl Tiling {
             TilingKind::OctagonAndSquare => {
                 self.max_index.as_vec2() * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER
             }
+            TilingKind::EquilateralTriangular => Vec2::new(
+                TileShape::EquilateralTriangle(EquilateralDirection::Up).get_width()
+                    * (0.5 + 0.5 * self.max_index.x as f32),
+                TileShape::EquilateralTriangle(EquilateralDirection::Up).get_height()
+                    * self.max_index.y as f32,
+            ),
+            TilingKind::RightTriangular => Vec2::new(
+                TileShape::RightTriangle(RightTriangleRotation::Zero).get_width()
+                    * ((self.max_index.x + 1) / 2) as f32,
+                TileShape::RightTriangle(RightTriangleRotation::Zero).get_height()
+                    * self.max_index.y as f32,
+            ),
         }
     }
 
     pub fn adjust_position(&self, position: Vec2) -> Vec2 {
         let size = self.size();
-        Vec2::new(position.x.rem_euclid(size.x), position.y.rem_euclid(size.y))
+        Vec2::new(
+            (position.x - self.offset.x).rem_euclid(size.x) + self.offset.x,
+            (position.y - self.offset.y).rem_euclid(size.y) + self.offset.y,
+        )
     }
 
     pub fn adjust_index(&self, index: IVec2) -> IVec2 {
@@ -127,7 +195,7 @@ impl Tiling {
     }
 
     pub fn get_position_from_index(&self, index: IVec2) -> Vec2 {
-        self.compute_offset_between_indicies(IVec2::ZERO, self.adjust_index(index))
+        self.compute_offset_between_indicies(IVec2::ZERO, self.adjust_index(index)) + self.offset
     }
 
     pub fn compute_offset_between_indicies(&self, index0: IVec2, index1: IVec2) -> Vec2 {
@@ -145,11 +213,36 @@ impl Tiling {
             TilingKind::OctagonAndSquare => {
                 index_offset.as_vec2() * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER
             }
+            TilingKind::EquilateralTriangular => {
+                // We do have to div_euclid here so 2 * double_x_change + index0.x <= index1.x
+                // and the same for y.
+                let double_x_change = index_offset.x.div_euclid(2);
+                let single_x_change = index_offset.x.rem_euclid(2);
+                let y_added_from_x = (index0.x + index0.y).rem_euclid(2) as f32 - 0.5;
+                let double_y_change = index_offset.y.div_euclid(2);
+                let single_y_change = index_offset.y.rem_euclid(2);
+                let y_added_step =
+                    ((index0.x + index0.y + single_x_change).rem_euclid(2)) as f32 + 1.0;
+                Vec2::new(
+                    TileShape::Hexagon.get_width()
+                        * (double_x_change as f32 + single_x_change as f32 * 0.5),
+                    TileShape::EquilateralTriangle(EquilateralDirection::Up).get_height() * 2.0 * double_y_change as f32
+                        + y_added_from_x * single_x_change as f32
+                        + y_added_step * single_y_change as f32,
+                )
+            }
+            // We always place the "center" of the tile in center of the rectangle split between
+            // two right triangles making up a square. We control the rotation of said triangles
+            // around that center in the triangle shape.
+            TilingKind::RightTriangular => Vec2::new(
+                (index1.x.div_euclid(2) - index0.x.div_euclid(2)) as f32,
+                (index1.y - index0.y) as f32,
+            ) * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
         }
     }
 
     pub fn get_index_for_position(&self, position: Vec2) -> IVec2 {
-        let adjusted_position = self.adjust_position(position);
+        let adjusted_position = position - self.offset;
         self.adjust_index(match self.kind {
             TilingKind::Square => adjusted_position.round().as_ivec2(),
             TilingKind::Hexagonal => {
@@ -197,6 +290,38 @@ impl Tiling {
                     )
                 }
             }
+            TilingKind::EquilateralTriangular => {
+                let right_rotation = Vec2::new((-2.0 * FRAC_PI_3).cos(), (-2.0 * FRAC_PI_3).sin());
+                let rotated_right = adjusted_position * right_rotation.x + adjusted_position.perp() * right_rotation.y;
+                let left_right = adjusted_position * right_rotation.x - adjusted_position.perp() * right_rotation.y;
+                
+                let down_right = (1.0 + rotated_right.y).div_euclid(1.5) as i32;
+                let down_left = (1.0 + left_right.y).div_euclid(1.5) as i32;
+                let up_index = (1.0 + adjusted_position.y).div_euclid(1.5) as i32;
+                IVec2::new(down_left - down_right, up_index)
+            }
+            TilingKind::RightTriangular => {
+                let adjusted_position = adjusted_position + 0.5 * Vec2::new(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER, OCTAGON_SQUARE_DIFFERENCE_OF_CENTER);
+                let x_block = adjusted_position.x.div_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER) as i32;
+                let x_in_block = adjusted_position.x.rem_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER);
+                let y_block = adjusted_position.y.div_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER) as i32;
+                let y_in_block = adjusted_position.y.rem_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER);
+                let triangle_in_block = if (x_block + y_block).rem_euclid(2) == 0 {
+                    if x_in_block <= OCTAGON_SQUARE_DIFFERENCE_OF_CENTER - y_in_block {
+                        0
+                    } else {
+                        1
+                    }
+                } else {
+                    if x_in_block <= y_in_block {
+                        0
+                    } else {
+                        1
+                    }
+                };
+
+                IVec2::new(2 * x_block + triangle_in_block, y_block)
+            }
         })
     }
 
@@ -207,7 +332,7 @@ impl Tiling {
     pub fn get_tile_at_index(&self, index: IVec2) -> Tile {
         Tile {
             position: self.get_position_from_index(index),
-            index: index,
+            index,
             shape: match self.kind {
                 TilingKind::Square => TileShape::Square,
                 TilingKind::Hexagonal => TileShape::Hexagon,
@@ -218,6 +343,24 @@ impl Tiling {
                         TileShape::Octagon
                     }
                 }
+                TilingKind::EquilateralTriangular => {
+                    TileShape::EquilateralTriangle(if (index.x + index.y) % 2 == 0 {
+                        EquilateralDirection::Down
+                    } else {
+                        EquilateralDirection::Up
+                    })
+                }
+                TilingKind::RightTriangular => TileShape::RightTriangle(
+                    match (
+                        (index.x.div_euclid(2) + index.y) % 2 == 0,
+                        index.x.rem_euclid(2) == 0,
+                    ) {
+                        (true, true) => RightTriangleRotation::Zero,
+                        (true, false) => RightTriangleRotation::Two,
+                        (false, true) => RightTriangleRotation::One,
+                        (false, false) => RightTriangleRotation::Three,
+                    },
+                ),
             },
         }
     }
@@ -251,6 +394,147 @@ impl Tiling {
                     ]
                 }
             }
+            TilingKind::EquilateralTriangular => {
+                if (index.x + index.y) % 2 == 0 {
+                    &[
+                        (-2, 1),
+                        (-1, 1),
+                        (0, 1),
+                        (1, 1),
+                        (2, 1),
+                        (-2, 0),
+                        (-1, 0),
+                        (1, 0),
+                        (2, 0),
+                        (-1, -1),
+                        (0, -1),
+                        (1, -1),
+                    ]
+                } else {
+                    &[
+                        (-1, 1),
+                        (0, 1),
+                        (1, 1),
+                        (-2, 0),
+                        (-1, 0),
+                        (1, 0),
+                        (2, 0),
+                        (-2, -1),
+                        (-1, -1),
+                        (0, -1),
+                        (1, -1),
+                        (2, -1),
+                    ]
+                }
+            }
+            TilingKind::RightTriangular => match (
+                (index.x.div_euclid(2) + index.y) % 2 == 0,
+                index.x.rem_euclid(2) == 0,
+            ) {
+                (true, true) => &[
+                    (-2, 1),
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                    (-2, 0),
+                    (-1, 0),
+                    (1, 0),
+                    (2, 0),
+                    (3, 0),
+                    (-1, -1),
+                    (0, -1),
+                    (1, -1),
+                    (2, -1),
+                    (3, -1),
+                ],
+                (true, false) => &[
+                    (-3, 1),
+                    (-2, 1),
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                    (-3, 0),
+                    (-2, 0),
+                    (-1, 0),
+                    (1, 0),
+                    (2, 0),
+                    (-1, -1),
+                    (0, -1),
+                    (1, -1),
+                    (2, -1),
+                ],
+                (false, true) => &[
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                    (2, 1),
+                    (3, 1),
+                    (-2, 0),
+                    (-1, 0),
+                    (1, 0),
+                    (2, 0),
+                    (3, 0),
+                    (-2, -1),
+                    (-1, -1),
+                    (0, -1),
+                    (1, -1),
+                ],
+                (false, false) => &[
+                    (-1, 1),
+                    (0, 1),
+                    (1, 1),
+                    (2, 1),
+                    (-3, 0),
+                    (-2, 0),
+                    (-1, 0),
+                    (1, 0),
+                    (2, 0),
+                    (-3, -1),
+                    (-2, -1),
+                    (-1, -1),
+                    (0, -1),
+                    (1, -1),
+                ],
+            },
+        }
+    }
+
+    pub fn get_adjacent(&self, index: IVec2) -> &'static [(i32, i32)] {
+        match self.kind {
+            TilingKind::Square => &[(-1, 0), (0, 1), (1, 0), (0, -1)],
+            TilingKind::Hexagonal => &[(0, 1), (1, 1), (-1, 0), (1, 0), (-1, -1), (0, -1)],
+            TilingKind::OctagonAndSquare => {
+                if (index.x + index.y) % 2 == 0 {
+                    &[(-1, 0), (0, -1), (1, 0), (0, 1)]
+                } else {
+                    &[
+                        (-1, -1),
+                        (-1, 0),
+                        (-1, 1),
+                        (0, 1),
+                        (1, 1),
+                        (1, 0),
+                        (1, -1),
+                        (0, -1),
+                    ]
+                }
+            }
+            TilingKind::EquilateralTriangular => {
+                if (index.x + index.y) % 2 == 0 {
+                    &[(-1, 0), (1, 0), (0, 1)]
+                } else {
+                    &[(-1, 0), (1, 0), (0, -1)]
+                }
+            }
+            TilingKind::RightTriangular => match (
+                (index.x.div_euclid(2) + index.y) % 2 == 0,
+                index.x.rem_euclid(2) == 0,
+            ) {
+                (true, true) => &[(-1, 0), (1, 0), (0, -1)],
+                (true, false) => &[(-1, 0), (1, 0), (0, 1)],
+                (false, true) => &[(-1, 0), (1, 0), (0, 1)],
+                (false, false) => &[(-1, 0), (1, 0), (0, -1)],
+            },
         }
     }
 }
