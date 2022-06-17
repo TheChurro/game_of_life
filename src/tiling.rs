@@ -175,6 +175,36 @@ impl Tiling {
         )
     }
 
+    pub fn in_bounds(&self, index: IVec2) -> bool {
+        index.x >= 0 && index.x < self.max_index.x && index.y >= 0 && index.y < self.max_index.y
+    }
+
+    pub fn get_verticies(&self, index: IVec2, self_is_dual: bool) -> Vec<IVec2> {
+        match self.kind {
+            TilingKind::Square => {
+                if self_is_dual {
+                    vec![
+                        index + IVec2::new(-1, 0),
+                        index,
+                        index + IVec2::new(0, -1),
+                        index + IVec2::new(-1, -1),
+                    ]
+                } else {
+                    vec![
+                        index,
+                        index + IVec2::new(1, 0),
+                        index + IVec2::new(1, 1),
+                        index + IVec2::new(0, 1),
+                    ]
+                }
+            }
+            TilingKind::Hexagonal => panic!("Not yet implemented"),
+            TilingKind::OctagonAndSquare => panic!("Not yet implemented"),
+            TilingKind::EquilateralTriangular => panic!("Not yet implemented"),
+            TilingKind::RightTriangular => panic!("Not yet implemented"),
+        }
+    }
+
     pub fn adjust_index(&self, index: IVec2) -> IVec2 {
         match self.kind {
             TilingKind::Hexagonal => {
@@ -226,7 +256,9 @@ impl Tiling {
                 Vec2::new(
                     TileShape::Hexagon.get_width()
                         * (double_x_change as f32 + single_x_change as f32 * 0.5),
-                    TileShape::EquilateralTriangle(EquilateralDirection::Up).get_height() * 2.0 * double_y_change as f32
+                    TileShape::EquilateralTriangle(EquilateralDirection::Up).get_height()
+                        * 2.0
+                        * double_y_change as f32
                         + y_added_from_x * single_x_change as f32
                         + y_added_step * single_y_change as f32,
                 )
@@ -234,10 +266,12 @@ impl Tiling {
             // We always place the "center" of the tile in center of the rectangle split between
             // two right triangles making up a square. We control the rotation of said triangles
             // around that center in the triangle shape.
-            TilingKind::RightTriangular => Vec2::new(
-                (index1.x.div_euclid(2) - index0.x.div_euclid(2)) as f32,
-                (index1.y - index0.y) as f32,
-            ) * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
+            TilingKind::RightTriangular => {
+                Vec2::new(
+                    (index1.x.div_euclid(2) - index0.x.div_euclid(2)) as f32,
+                    (index1.y - index0.y) as f32,
+                ) * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER
+            }
         }
     }
 
@@ -292,20 +326,37 @@ impl Tiling {
             }
             TilingKind::EquilateralTriangular => {
                 let right_rotation = Vec2::new((-2.0 * FRAC_PI_3).cos(), (-2.0 * FRAC_PI_3).sin());
-                let rotated_right = adjusted_position * right_rotation.x + adjusted_position.perp() * right_rotation.y;
-                let left_right = adjusted_position * right_rotation.x - adjusted_position.perp() * right_rotation.y;
-                
+                let rotated_right = adjusted_position * right_rotation.x
+                    + adjusted_position.perp() * right_rotation.y;
+                let left_right = adjusted_position * right_rotation.x
+                    - adjusted_position.perp() * right_rotation.y;
+
                 let down_right = (1.0 + rotated_right.y).div_euclid(1.5) as i32;
                 let down_left = (1.0 + left_right.y).div_euclid(1.5) as i32;
                 let up_index = (1.0 + adjusted_position.y).div_euclid(1.5) as i32;
                 IVec2::new(down_left - down_right, up_index)
             }
             TilingKind::RightTriangular => {
-                let adjusted_position = adjusted_position + 0.5 * Vec2::new(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER, OCTAGON_SQUARE_DIFFERENCE_OF_CENTER);
-                let x_block = adjusted_position.x.div_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER) as i32;
-                let x_in_block = adjusted_position.x.rem_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER);
-                let y_block = adjusted_position.y.div_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER) as i32;
-                let y_in_block = adjusted_position.y.rem_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER);
+                let adjusted_position = adjusted_position
+                    + 0.5
+                        * Vec2::new(
+                            OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
+                            OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
+                        );
+                let x_block = adjusted_position
+                    .x
+                    .div_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER)
+                    as i32;
+                let x_in_block = adjusted_position
+                    .x
+                    .rem_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER);
+                let y_block = adjusted_position
+                    .y
+                    .div_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER)
+                    as i32;
+                let y_in_block = adjusted_position
+                    .y
+                    .rem_euclid(OCTAGON_SQUARE_DIFFERENCE_OF_CENTER);
                 let triangle_in_block = if (x_block + y_block).rem_euclid(2) == 0 {
                     if x_in_block <= OCTAGON_SQUARE_DIFFERENCE_OF_CENTER - y_in_block {
                         0
@@ -499,42 +550,87 @@ impl Tiling {
         }
     }
 
-    pub fn get_adjacent(&self, index: IVec2) -> &'static [(i32, i32)] {
+    pub fn get_dual(&self) -> Self {
         match self.kind {
-            TilingKind::Square => &[(-1, 0), (0, 1), (1, 0), (0, -1)],
-            TilingKind::Hexagonal => &[(0, 1), (1, 1), (-1, 0), (1, 0), (-1, -1), (0, -1)],
+            TilingKind::Square => Self {
+                kind: TilingKind::Square,
+                offset: Vec2::new(-0.5, -0.5),
+                max_index: self.max_index + IVec2::new(2, 2),
+            },
+            TilingKind::Hexagonal => Self {
+                kind: TilingKind::EquilateralTriangular,
+                offset: Vec2::new(
+                    -TileShape::EquilateralTriangle(EquilateralDirection::Up).get_width() * 0.5,
+                    -0.5,
+                ),
+                max_index: self.max_index * IVec2::new(2, 1) + IVec2::new(1, 1),
+            },
+            TilingKind::OctagonAndSquare => Self {
+                kind: TilingKind::RightTriangular,
+                offset: Vec2::new(
+                    -0.5 * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
+                    -0.5 * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
+                ),
+                max_index: self.max_index * IVec2::new(2, 1) + IVec2::new(4, 2),
+            },
+            TilingKind::EquilateralTriangular => Self {
+                kind: TilingKind::Hexagonal,
+                offset: Vec2::new(
+                    -TileShape::EquilateralTriangle(EquilateralDirection::Up).get_width(),
+                    -1.0,
+                ),
+                max_index: self.max_index + IVec2::new(2, 2),
+            },
+            TilingKind::RightTriangular => Self {
+                kind: TilingKind::OctagonAndSquare,
+                offset: Vec2::new(
+                    -0.5 * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
+                    -0.5 * OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
+                ),
+                max_index: IVec2::new(self.max_index.x / 2 + 1, self.max_index.y + 1),
+            },
+        }
+    }
+
+    pub fn get_adjacent(&self, index: IVec2) -> &'static [(i32, i32, usize)] {
+        match self.kind {
+            TilingKind::Square => &[(1, 0, 2), (0, 1, 3), (-1, 0, 0), (0, -1, 1), ],
+            TilingKind::Hexagonal => todo!(),// &[(0, 1, 3), (1, 1, 4), (-1, 0, 5), (1, 0, 0), (-1, -1, 1), (0, -1, 2)],
             TilingKind::OctagonAndSquare => {
-                if (index.x + index.y) % 2 == 0 {
-                    &[(-1, 0), (0, -1), (1, 0), (0, 1)]
-                } else {
-                    &[
-                        (-1, -1),
-                        (-1, 0),
-                        (-1, 1),
-                        (0, 1),
-                        (1, 1),
-                        (1, 0),
-                        (1, -1),
-                        (0, -1),
-                    ]
-                }
+                todo!()
+                // if (index.x + index.y) % 2 == 0 {
+                //     &[(-1, 0), (0, -1), (1, 0), (0, 1)]
+                // } else {
+                //     &[
+                //         (-1, -1),
+                //         (-1, 0),
+                //         (-1, 1),
+                //         (0, 1),
+                //         (1, 1),
+                //         (1, 0),
+                //         (1, -1),
+                //         (0, -1),
+                //     ]
+                // }
             }
             TilingKind::EquilateralTriangular => {
-                if (index.x + index.y) % 2 == 0 {
-                    &[(-1, 0), (1, 0), (0, 1)]
-                } else {
-                    &[(-1, 0), (1, 0), (0, -1)]
-                }
+                todo!()
+                // if (index.x + index.y) % 2 == 0 {
+                //     &[(-1, 0), (1, 0), (0, 1)]
+                // } else {
+                //     &[(-1, 0), (1, 0), (0, -1)]
+                // }
             }
-            TilingKind::RightTriangular => match (
-                (index.x.div_euclid(2) + index.y) % 2 == 0,
-                index.x.rem_euclid(2) == 0,
-            ) {
-                (true, true) => &[(-1, 0), (1, 0), (0, -1)],
-                (true, false) => &[(-1, 0), (1, 0), (0, 1)],
-                (false, true) => &[(-1, 0), (1, 0), (0, 1)],
-                (false, false) => &[(-1, 0), (1, 0), (0, -1)],
-            },
+            TilingKind::RightTriangular => todo!()
+            // match (
+            //     (index.x.div_euclid(2) + index.y) % 2 == 0,
+            //     index.x.rem_euclid(2) == 0,
+            // ) {
+            //     (true, true) => &[(-1, 0), (1, 0), (0, -1)],
+            //     (true, false) => &[(-1, 0), (1, 0), (0, 1)],
+            //     (false, true) => &[(-1, 0), (1, 0), (0, 1)],
+            //     (false, false) => &[(-1, 0), (1, 0), (0, -1)],
+            // },
         }
     }
 }

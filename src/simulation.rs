@@ -297,7 +297,10 @@ impl SimulationState {
     }
 
     pub fn get_num_states_for_shape(&self, shape: TileShape) -> u32 {
-        self.states.get(&shape).map(|rules| rules.len() as u32).unwrap_or(0)
+        self.states
+            .get(&shape)
+            .map(|rules| rules.len() as u32)
+            .unwrap_or(0)
     }
 
     pub fn clone_rules_for_shape(&self, shape: TileShape) -> Vec<StateRules> {
@@ -431,7 +434,9 @@ impl SimulationState {
         }
     }
 
-    pub fn process(&mut self) {
+    pub fn process(&mut self) -> Vec<(IVec2, u32)> {
+        let mut sets = Vec::new();
+
         // If we are doing a real tick, take in the value from the last process
         // step along with the usual normal values.
         if self.step > 0 {
@@ -463,6 +468,8 @@ impl SimulationState {
                 );
                 0u32
             };
+
+            sets.push((key, value));
 
             // Determine if after updating our state we need to change our state in the next step.
             let default_rules = Vec::new();
@@ -504,5 +511,7 @@ impl SimulationState {
                 };
             }
         }
+
+        sets
     }
 }

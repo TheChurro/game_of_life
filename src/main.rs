@@ -4,25 +4,31 @@ use bevy::{
         mouse::{MouseMotion, MouseWheel},
         Input,
     },
-    math::{IVec2, Vec2, Vec3},
+    math::{IVec2, Vec2, Vec3, Quat, Mat4},
     prelude::{
         App, AssetServer, Assets, Changed, Color, Commands, Component, CoreStage, Entity,
-        EventReader, Handle, Image, Mesh, MouseButton, OrthographicCameraBundle,
-        ParallelSystemDescriptorCoercion, Query, Res, ResMut, Transform, With, Without,
+        EventReader, EventWriter, Handle, Image, Mesh, MouseButton, OrthographicCameraBundle,
+        ParallelSystemDescriptorCoercion, PerspectiveCameraBundle, Query, Res, ResMut, Transform,
+        With, Without, Visibility, KeyCode, shape::Cube, PerspectiveProjection,
     },
-    render::mesh::{Indices, PrimitiveTopology},
+    render::{mesh::{Indices, PrimitiveTopology}, camera::{Camera3d, CameraProjection}},
     sprite::{ColorMaterial, MaterialMesh2dBundle, Mesh2dHandle},
     text::{Font, Text, Text2dBundle, TextAlignment, TextSection, TextStyle},
     utils::HashMap,
     window::Windows,
-    DefaultPlugins,
+    DefaultPlugins, pbr::{DirectionalLightBundle, PbrBundle, StandardMaterial, AmbientLight},
 };
 
 use menus::MenuState;
 use simulation::SimulationState;
-use tiling::{TileShape, Tiling, TilingKind, EquilateralDirection, RightTriangleRotation, OCTAGON_SQUARE_DIFFERENCE_OF_CENTER};
+use tiling::{
+    EquilateralDirection, RightTriangleRotation, TileShape, Tiling, TilingKind,
+    OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
+};
+use visuals::{collapse::{collapse_visuals, rebuild_visuals, CollapseState, SimulationStateChanged}, geom::{SocketProfile, WallProfile}};
 
 extern crate bevy;
+extern crate bevy_obj;
 
 mod menus;
 mod simulation;
@@ -36,11 +42,15 @@ struct VisualState {
     mouse_moved: bool,
 
     cur_offset: Vec2,
+    camera_offset: Vec3,
+    camera_angle: Vec2,
+    last_click_pos: Option<Vec3>,
     visual_grid_count: IVec2,
     scale: f32,
     min_scale: f32,
     max_scale: f32,
     add_debug: bool,
+    hide: bool,
 }
 
 #[derive(Component)]
@@ -71,6 +81,7 @@ fn setup_world(
     sim_state: Res<SimulationState>,
     vis_state: Res<VisualState>,
     menu_state: Res<MenuState>,
+    mut standard_materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for shape in [TileShape::Square, TileShape::Hexagon, TileShape::Octagon] {
         let mut verticies = vec![[0.0, 0.0, 0.0]];
@@ -125,10 +136,37 @@ fn setup_world(
     }
 
     // Now add handle for the angles of the four different kinds of right triangles
-    for rotation in [RightTriangleRotation::Zero, RightTriangleRotation::One, RightTriangleRotation::Two, RightTriangleRotation::Three] {
+    for rotation in [
+        RightTriangleRotation::Zero,
+        RightTriangleRotation::One,
+        RightTriangleRotation::Two,
+        RightTriangleRotation::Three,
+    ] {
         let shape = TileShape::RightTriangle(rotation);
-        let mut verticies = vec![[0.0, 0.0, 0.0], [-OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, 0.0], [-OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, -OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, 0.0], [OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, -OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5, 0.0]];
-        let normals = vec![[0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [0.0, 0.0, 1.0]];
+        let mut verticies = vec![
+            [0.0, 0.0, 0.0],
+            [
+                -OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5,
+                OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5,
+                0.0,
+            ],
+            [
+                -OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5,
+                -OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5,
+                0.0,
+            ],
+            [
+                OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5,
+                -OCTAGON_SQUARE_DIFFERENCE_OF_CENTER * 0.5,
+                0.0,
+            ],
+        ];
+        let normals = vec![
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+            [0.0, 0.0, 1.0],
+        ];
         let uvs = vec![[1.0, 1.0], [0.0, 1.0], [0.0, 0.0], [1.0, 0.0]];
         let indicies = vec![0, 1, 2, 0, 2, 3];
         for vertex in &mut verticies {
@@ -179,6 +217,20 @@ fn setup_world(
         .expect("Failed to get material just created!")
         .clone();
 
+    commands.insert_resource(AmbientLight {
+        color: Color::ORANGE_RED,
+        brightness: 0.02,
+    });
+
+    commands.spawn_bundle(DirectionalLightBundle {
+        transform: Transform {
+            translation: Vec3::new(0.0, 2.0, 0.0),
+            rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_8),
+            ..Default::default()
+        },
+        ..Default::default()
+    });
+
     let half_size = Vec2::ZERO; //sim_state.tiling.size() / 2.0;
     for x in -vis_state.visual_grid_count.x / 2..(vis_state.visual_grid_count.x + 1) / 2 {
         for y in -vis_state.visual_grid_count.y / 2..(vis_state.visual_grid_count.y + 1) / 2 {
@@ -221,11 +273,42 @@ fn setup_world(
         }
     }
 
+    use WallProfile::*;
+    let mesh = asset_server.load(&SocketProfile::new(
+        "ffss".to_string(),
+        vec![Bottom, Wall, Top, Llaw],
+        "eeff".to_string(),
+    ).unwrap().get_resource_location());
+    commands.spawn_bundle(PbrBundle {
+        mesh,
+        visibility: Visibility { is_visible: true },
+        transform: Transform::from_rotation(Quat::from_rotation_y(0.0)),
+        ..Default::default()
+    });
+    let cube = meshes.add(Mesh::from(Cube::new(1.0)));
+    commands.spawn_bundle(PbrBundle {
+        mesh: cube.clone(),
+        material: standard_materials.add(Color::GREEN.into()),
+        visibility: Visibility { is_visible: true },
+        transform: Transform::from_xyz(1.0, 0.0, 0.0),
+        ..Default::default()
+    });
+    commands.spawn_bundle(PbrBundle {
+        mesh: cube.clone(),
+        material: standard_materials.add(Color::RED.into()),
+        visibility: Visibility { is_visible: true },
+        transform: Transform::from_xyz(0.0, 0.0, 1.0),
+        ..Default::default()
+    });
+
+    let mut camera = PerspectiveCameraBundle::new_3d();
+    camera.transform = Transform::from_xyz(-20.0, 20.0, -20.0).looking_at(Vec3::new(25.0, 0.0, 25.0), Vec3::Y);
+    commands.spawn_bundle(camera);
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
 }
 
 fn update_tile(
-    mut tile_query: Query<(&mut Transform, &mut TileState)>,
+    mut tile_query: Query<(&mut Transform, &mut TileState, &mut Visibility)>,
     vis_state: Res<VisualState>,
     sim_state: Res<SimulationState>,
 ) {
@@ -243,7 +326,7 @@ fn update_tile(
     } else if offset.y < tiling_size.y / -2.0 {
         offset.y += tiling_size.y;
     }
-    tile_query.for_each_mut(|(mut transform, mut state)| {
+    tile_query.for_each_mut(|(mut transform, mut state, mut vis)| {
         let new_index = sim_state
             .tiling
             .adjust_index(central_tile.index + state.offset_from_center);
@@ -270,6 +353,11 @@ fn update_tile(
         if pending != state.next {
             state.next = pending;
         }
+
+        if vis.is_visible == vis_state.hide {
+            vis.is_visible = !vis_state.hide;
+        }
+
         transform.translation = vis_state.scale
             * (offset
                 + sim_state.tiling.compute_offset_between_indicies(
@@ -338,6 +426,7 @@ fn input_system(
     mut vis_state: ResMut<VisualState>,
     mut sim_state: ResMut<SimulationState>,
 
+    keyboard: Res<Input<KeyCode>>,
     mut input_state: ResMut<ui::InputState>,
     mouse_input: Res<Input<MouseButton>>,
     mouse_movements: EventReader<MouseMotion>,
@@ -345,6 +434,7 @@ fn input_system(
     windows: Res<Windows>,
     ui_roots_query: Query<Entity, (With<ui::UiElement>, Without<Parent>)>,
     ui_element_query: Query<(&Transform, &mut ui::UiElement, Option<&Children>)>,
+    camera: Query<(&Transform, &PerspectiveProjection), With<Camera3d>>,
 ) {
     let processed_input = input_state.process_inputs(
         &mouse_input,
@@ -355,6 +445,10 @@ fn input_system(
         ui_element_query,
     );
 
+    if keyboard.just_pressed(KeyCode::H) && !vis_state.mouse_down {
+        vis_state.hide = !vis_state.hide;
+    }
+
     if processed_input.over_some_ui {
         return;
     }
@@ -362,6 +456,7 @@ fn input_system(
     if mouse_input.just_pressed(MouseButton::Left) {
         vis_state.mouse_down = true;
         vis_state.mouse_moved = false;
+        vis_state.last_click_pos = None;
     }
 
     vis_state.scale = (vis_state.scale + processed_input.scroll.y)
@@ -369,24 +464,78 @@ fn input_system(
         .min(vis_state.max_scale);
 
     if vis_state.mouse_down {
-        if processed_input.movement.length_squared() > 0.001 {
-            vis_state.mouse_moved = true;
-            vis_state.cur_offset = sim_state.tiling.adjust_position(
-                processed_input.movement * Vec2::new(-1.0, 1.0) / vis_state.scale
-                    + vis_state.cur_offset,
-            );
-        }
+        let primary_window = windows.primary();
+        let mouse_pos = windows.primary().cursor_position().unwrap();
 
-        if mouse_input.just_released(MouseButton::Left) {
-            vis_state.mouse_down = false;
-            if !vis_state.mouse_moved {
-                let primary_window = windows.primary();
-                if let Some(position) = primary_window.cursor_position() {
-                    let position =
-                        position - Vec2::new(primary_window.width(), primary_window.height()) / 2.0;
-                    let adjusted_position = position / vis_state.scale + vis_state.cur_offset;
+        if vis_state.hide {
+            if let Ok((transform, camera)) = camera.get_single() {
+                let camera_matrix: Mat4 = transform.compute_matrix() * camera.get_projection_matrix().inverse();
+
+                let x = 2.0 * (mouse_pos.x / primary_window.width() as f32) - 1.0;
+                let y = 2.0 * (mouse_pos.y / primary_window.height() as f32) - 1.0;
+
+                let near = camera_matrix * Vec3::new(x, y, 0.0).extend(1.0);
+                let near = if near.w < 0.00001 { near.truncate() } else { near.truncate() / near.w };
+                let far = camera_matrix * Vec3::new(x, y, 1.0).extend(1.0);
+                let far = far.truncate() / far.w;
+
+                let dir = (far - near).normalize();
+
+                let new_pos = if dir.y.signum() != near.y.signum() {
+                    let time_to_plane = near.y / -dir.y;
+                    Some(near + dir * time_to_plane)
+                } else { None };
+
+                if keyboard.pressed(KeyCode::LShift) {
+                    if processed_input.movement.length_squared() > 0.01 || vis_state.mouse_moved {
+                        vis_state.mouse_moved = true;
+                        vis_state.camera_angle += processed_input.movement;
+                        vis_state.camera_angle.y = vis_state.camera_angle.y.clamp(20.0, 90.0);
+                        vis_state.camera_angle.x = vis_state.camera_angle.x % 360.0;
+                    }
+                } else {
+                    if let Some(last_pos) = vis_state.last_click_pos {
+                        let offset = new_pos.unwrap_or(last_pos) - last_pos;
+                        if vis_state.mouse_moved || offset.length_squared() > 0.1 {
+                            vis_state.camera_offset += offset;
+                            vis_state.last_click_pos = new_pos;
+                            vis_state.mouse_moved = true;
+                        }
+                    } else {
+                        vis_state.last_click_pos = new_pos;
+                    }
+                }
+
+                if mouse_input.just_released(MouseButton::Left) {
+                    vis_state.mouse_down = false;
+                    if !vis_state.mouse_moved {
+                        if let Some(pos) = new_pos {
+                            let tile = sim_state.tiling.get_tile_containing(Vec2::new(pos.x, pos.z));
+                            let target_state = (sim_state.get_at(tile.index) + 1)
+                                % sim_state.get_num_states_for_shape(tile.shape);
+                            sim_state.set_at(tile.index, target_state);
+                        }
+                    }
+                }
+            }
+        } else {
+            if processed_input.movement.length_squared() > 0.001 {
+                vis_state.mouse_moved = true;
+                vis_state.cur_offset = sim_state.tiling.adjust_position(
+                    processed_input.movement * Vec2::new(-1.0, 1.0) / vis_state.scale
+                        + vis_state.cur_offset,
+                );
+            }
+
+            if mouse_input.just_released(MouseButton::Left) {
+                vis_state.mouse_down = false;
+                if !vis_state.mouse_moved {
+                    let mouse_pos =
+                    mouse_pos - Vec2::new(primary_window.width(), primary_window.height()) / 2.0;
+                    let adjusted_position = mouse_pos / vis_state.scale + vis_state.cur_offset;
                     let tile = sim_state.tiling.get_tile_containing(adjusted_position);
-                    let target_state = (sim_state.get_at(tile.index) + 1) % sim_state.get_num_states_for_shape(tile.shape);
+                    let target_state = (sim_state.get_at(tile.index) + 1)
+                        % sim_state.get_num_states_for_shape(tile.shape);
                     sim_state.set_at(tile.index, target_state);
                 }
             }
@@ -394,13 +543,36 @@ fn input_system(
     }
 }
 
-fn process_simulation(mut sim_state: ResMut<SimulationState>) {
-    sim_state.process();
+fn process_simulation(
+    mut sim_state: ResMut<SimulationState>,
+    mut events: EventWriter<SimulationStateChanged>,
+) {
+    let changes = sim_state.process();
+    if changes.len() > 0 {
+        events.send(SimulationStateChanged::StatesChanged(changes));
+    }
+}
+
+fn move_camera(vis_state: Res<VisualState>,mut camera: Query<&mut Transform, With<Camera3d>>,) {
+    camera.for_each_mut(|mut transform| {
+        *transform = Transform::from_translation(Vec3::new(
+            vis_state.scale * vis_state.camera_angle.x.to_radians().cos() * vis_state.camera_angle.y.to_radians().cos(),
+            vis_state.scale * vis_state.camera_angle.y.to_radians().sin(),
+            vis_state.scale * vis_state.camera_angle.x.to_radians().sin() * vis_state.camera_angle.y.to_radians().cos(),
+        ) + vis_state.camera_offset).looking_at(vis_state.camera_offset, Vec3::Y);
+    });
 }
 
 fn main() {
     let mut app = App::new();
+    let tiling = Tiling {
+        kind: TilingKind::Square,
+        max_index: IVec2::new(50, 50),
+        offset: Vec2::ZERO,
+    };
+    let dual = tiling.get_dual();
     app.add_plugins(DefaultPlugins);
+    app.add_plugin(bevy_obj::ObjPlugin);
     app.add_plugin(
         ui::UIPlugin::new()
             .register_event::<menus::ChangeViewTo>()
@@ -415,26 +587,37 @@ fn main() {
         outline_image: Default::default(),
         font: Handle::default(),
     })
-    .insert_resource(SimulationState::new(Tiling {
-        kind: TilingKind::Hexagonal,
-        max_index: IVec2::new(50, 50),
-        offset: Vec2::ZERO,
-    }))
+    .insert_resource(SimulationState::new(tiling))
     .insert_resource(VisualState {
         mouse_down: false,
         mouse_moved: false,
 
         cur_offset: Vec2::ZERO,
-        visual_grid_count: IVec2::new(52, 52),
+        camera_offset: Vec3::ZERO,
+        camera_angle: Vec2::new(0.0, 20.0),
+        last_click_pos: None,
+        visual_grid_count: IVec2::new(26, 26),
         scale: 50.0,
         min_scale: 25.0,
         max_scale: 100.0,
         add_debug: false,
+        hide: true,
     })
+    .insert_resource(CollapseState {
+        position_to_entry: Default::default(),
+        dual_tiling: dual,
+        collapsed_indicies: Default::default(),
+    })
+    .add_event::<SimulationStateChanged>()
+    .insert_resource(visuals::geom::GeometryStorage::new())
     .add_startup_system(setup_world.after(menus::setup_menus))
     .add_system_to_stage(CoreStage::PreUpdate, input_system)
+    .add_startup_system(visuals::geom::load_geometry)
     .add_system(update_tile)
     .add_system(update_tile_visual.after(update_tile))
     .add_system(process_simulation)
+    .add_system(collapse_visuals)
+    .add_system(rebuild_visuals)
+    .add_system(move_camera)
     .run()
 }

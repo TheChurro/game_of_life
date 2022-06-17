@@ -502,6 +502,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "bevy_obj"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4ec5999eb52b848744af3c58e9ac810a7fbc2fedce412d651d640ba4c352868d"
+dependencies = [
+ "anyhow",
+ "bevy_app",
+ "bevy_asset",
+ "bevy_render",
+ "bevy_utils",
+ "obj-rs",
+ "thiserror",
+]
+
+[[package]]
 name = "bevy_pbr"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1381,6 +1396,7 @@ name = "game_of_life"
 version = "0.1.0"
 dependencies = [
  "bevy",
+ "bevy_obj",
 ]
 
 [[package]]
@@ -2191,6 +2207,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "obj-rs"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c90a2f645433dba5c609451d3fa847282b0f23ee8d8fa75491a946af53cb1db4"
+dependencies = [
+ "num-traits",
 ]
 
 [[package]]

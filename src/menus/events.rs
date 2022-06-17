@@ -8,6 +8,7 @@ use crate::{
     simulation::{RuleUpdateTarget, SimulationState},
     tiling::{EquilateralDirection, RightTriangleRotation, TileShape, Tiling, TilingKind},
     ui::NumberedEventGenerator,
+    visuals::collapse::SimulationStateChanged,
     VisualsCache,
 };
 
@@ -75,12 +76,18 @@ pub enum RuleUpdateEvent {
 pub(super) fn change_view_to(
     mut events: EventReader<ChangeViewTo>,
     mut change_rules_view_events: EventWriter<ShowRulesFor>,
+    mut out_vis_events: EventWriter<SimulationStateChanged>,
     mut sim_state: ResMut<SimulationState>,
 ) {
     for event in events.iter() {
+        let grid_size = if event.0 == TilingKind::Square {
+            12
+        } else {
+            52
+        };
         *sim_state = SimulationState::new(Tiling {
             kind: event.0,
-            max_index: IVec2::new(52, 52),
+            max_index: IVec2::new(grid_size, grid_size),
             offset: Vec2::ZERO,
         });
 
@@ -98,6 +105,8 @@ pub(super) fn change_view_to(
             },
             state: 0u32,
         });
+
+        out_vis_events.send(SimulationStateChanged::NewTiling);
     }
 }
 
@@ -108,7 +117,7 @@ pub(super) fn toggle_play_event(
     for event in events.iter() {
         match event {
             TogglePlay::Toggle => {
-                sim_state.run_every = if sim_state.run_every == 0 { 2 } else { 0 }
+                sim_state.run_every = if sim_state.run_every == 0 { 5 } else { 0 }
             }
             TogglePlay::Step => {
                 sim_state.step += 1;
@@ -121,6 +130,7 @@ pub(super) fn on_rule_update(
     mut events: EventReader<RuleUpdateEvent>,
     mut sim_state: ResMut<SimulationState>,
     mut out_events: EventWriter<ShowRulesFor>,
+    mut out_vis_events: EventWriter<SimulationStateChanged>,
     mut menu_state: ResMut<MenuState>,
     mut vis_cache: ResMut<VisualsCache>,
     mut materials: ResMut<Assets<ColorMaterial>>,
@@ -156,6 +166,7 @@ pub(super) fn on_rule_update(
                             texture: Some(image),
                         }),
                     );
+                    out_vis_events.send(SimulationStateChanged::NewTiling);
                 }
                 update_view = true;
             }
