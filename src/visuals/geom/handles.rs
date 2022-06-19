@@ -6,7 +6,7 @@ use super::orientations::GeomOrientation;
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub struct GeometryHandle {
     pub index: usize,
-    pub transform: GeomOrientation,
+    pub orientation: GeomOrientation,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -49,11 +49,11 @@ impl GeometryHandleSet {
     pub fn insert(&mut self, handle: GeometryHandle) {
         let location = self.get_location_for_index(handle.index);
         if location < self.entries.len() && self.entries[location].index == handle.index {
-            self.entries[location].orientations |= handle.transform.to_bits();
+            self.entries[location].orientations |= handle.orientation.to_bits();
         } else {
             self.entries.insert(location, GeometryHandleSetEntry {
                 index: handle.index,
-                orientations: handle.transform.to_bits()
+                orientations: handle.orientation.to_bits()
             });
         }
     }
@@ -61,7 +61,7 @@ impl GeometryHandleSet {
     pub fn contains(&self, handle: GeometryHandle) -> bool {
         let location = self.get_location_for_index(handle.index);
         if location < self.entries.len() && self.entries[location].index == handle.index {
-            self.entries[location].orientations & handle.transform.to_bits() != 0
+            self.entries[location].orientations & handle.orientation.to_bits() != 0
         } else {
             false
         }
@@ -182,6 +182,10 @@ impl GeometryHandleSet {
     pub fn empty(&self) -> bool {
         self.entries.is_empty()
     }
+
+    pub fn unique_index_count(&self) -> usize {
+        self.entries.len()
+    }
 }
 
 impl BitOr for &GeometryHandleSet {
@@ -207,7 +211,7 @@ pub struct GeometryHandleSetIterator<'a> {
 }
 
 impl<'a> IntoIterator for &'a GeometryHandleSet {
-    type Item = GeomOrientation;
+    type Item = GeometryHandle;
 
     type IntoIter = GeometryHandleSetIterator<'a>;
 
@@ -221,21 +225,27 @@ impl<'a> IntoIterator for &'a GeometryHandleSet {
 }
 
 impl<'a> Iterator for GeometryHandleSetIterator<'a> {
-    type Item = GeomOrientation;
+    type Item = GeometryHandle;
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.location < self.set.entries.len() {
             while self.orientation < self.set.max_rotations {
                 self.orientation += 1;
                 if self.set.entries[self.location].orientations & (1 << (self.orientation - 1 )) != 0 {
-                    return Some(GeomOrientation::Standard { rotations: self.orientation - 1 })
+                    return Some(GeometryHandle {
+                        index: self.set.entries[self.location].index,
+                        orientation: GeomOrientation::Standard { rotations: self.orientation - 1 }
+                    })
                 }
             }
 
             while self.orientation < 2 * self.set.max_rotations {
                 self.orientation += 1;
                 if self.set.entries[self.location].orientations & (1 << (usize::MAX - self.orientation + self.set.max_rotations )) != 0 {
-                    return Some(GeomOrientation::Flipped { rotations: self.orientation - 1 - self.set.max_rotations })
+                    return Some(GeometryHandle {
+                        index: self.set.entries[self.location].index,
+                        orientation: GeomOrientation::Flipped { rotations: self.orientation - 1 - self.set.max_rotations }
+                    })
                 }
             }
 
@@ -257,19 +267,19 @@ mod tests {
         let mut set = GeometryHandleSet::new(5);
         set.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         assert_eq!(set.entries, vec![GeometryHandleSetEntry { index: 2, orientations: 0x4 }]);
 
         set.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 0 },
+            orientation: GeomOrientation::Standard { rotations: 0 },
         });
 
         set.insert(GeometryHandle {
             index: 0,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         assert_eq!(set.entries, vec![
@@ -279,7 +289,7 @@ mod tests {
 
         set.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
         assert_eq!(set.entries, vec![
@@ -290,7 +300,7 @@ mod tests {
 
         set.insert(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
         assert_eq!(set.entries, vec![
@@ -306,40 +316,40 @@ mod tests {
         let mut set = GeometryHandleSet::new(5);
         set.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 0 },
+            orientation: GeomOrientation::Standard { rotations: 0 },
         });
         set.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set.insert(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
         assert!(set.contains(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         }));
         assert!(set.contains(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         }));
         assert!(!set.contains(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         }));
         assert!(!set.contains(GeometryHandle {
             index: 4,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         }));
         assert!(!set.contains(GeometryHandle {
             index: 0,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         }));
     }
 
@@ -350,20 +360,20 @@ mod tests {
 
         set0.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set0.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set0.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         set1.insert(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
         let union = GeometryHandleSet::union(&[&set0, &set1]);
@@ -383,25 +393,25 @@ mod tests {
 
         set0.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set0.insert(GeometryHandle {
             index: 5,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         set1.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set1.insert(GeometryHandle {
             index: 4,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
         set2.insert(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         let union = GeometryHandleSet::union(&[&set0, &set1, &set2]);
@@ -422,25 +432,25 @@ mod tests {
 
         set0.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set0.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         set1.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set1.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         set2.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 0 },
+            orientation: GeomOrientation::Standard { rotations: 0 },
         });
 
         let union = GeometryHandleSet::union(&[&set0, &set1, &set2]);
@@ -472,36 +482,36 @@ mod tests {
 
         set0.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set0.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set0.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set0.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 0 },
+            orientation: GeomOrientation::Standard { rotations: 0 },
         });
 
         set1.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set1.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set1.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set1.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 0 },
+            orientation: GeomOrientation::Standard { rotations: 0 },
         });
 
         let intersection = GeometryHandleSet::intersection(&[&set0, &set1]);
@@ -519,20 +529,20 @@ mod tests {
 
         set0.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set0.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set0.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         set1.insert(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
         let intersection = GeometryHandleSet::intersection(&[&set0, &set1]);
@@ -549,33 +559,33 @@ mod tests {
 
         set0.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set0.insert(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set0.insert(GeometryHandle {
             index: 5,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         set1.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set1.insert(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
         set2.insert(GeometryHandle {
             index: 3,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set2.insert(GeometryHandle {
             index: 4,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
         let intersection = GeometryHandleSet::intersection(&[&set0, &set1, &set2]);
@@ -592,25 +602,25 @@ mod tests {
 
         set0.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
         set0.insert(GeometryHandle {
             index: 2,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         set1.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 1 },
+            orientation: GeomOrientation::Standard { rotations: 1 },
         });
         set1.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         set2.insert(GeometryHandle {
             index: 1,
-            transform: GeomOrientation::Standard { rotations: 2 },
+            orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
         let intersection = GeometryHandleSet::intersection(&[&set0, &set1, &set2]);

@@ -37,6 +37,10 @@ impl SocketProfile {
         Self { transforms, ..self }
     }
 
+    pub fn get_side_count(&self) -> usize {
+        self.walls.len()
+    }
+
     pub fn get_resource_location(&self) -> String {
         let mut name = "rect/".to_string();
         for vertical_block in &self.bottom {

@@ -1,15 +1,41 @@
 use bevy::{
     prelude::{AssetServer, Handle, Mesh, Res, ResMut},
-    utils::{HashMap, HashSet},
+    utils::HashMap,
 };
 
-use super::{socket::SocketProfile, handles::GeometryHandle, WallProfile};
+use super::{socket::SocketProfile, handles::{GeometryHandle, GeometryHandleSet}, WallProfile};
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub struct GeometryStorageVerticalKey {
+    pub side_count: usize,
+    pub bottom_profile: usize,
+    pub top_profile: usize,
+}
+
+impl GeometryStorageVerticalKey {
+    pub const fn new(side_count: usize, bottom: usize, top: usize) -> Self {
+        Self { side_count,  bottom_profile: bottom, top_profile: top }
+    }
+}
+
+#[derive(PartialEq, Eq, Hash, Clone, Copy)]
+pub struct GeometryStorageWallKey {
+    pub side_count: usize,
+    pub side: usize,
+    pub profile: WallProfile,
+}
+
+impl GeometryStorageWallKey {
+    pub const fn new(side_count: usize, side: usize, profile: WallProfile) -> Self {
+        Self { side_count, side, profile }
+    }
+}
 
 pub struct GeometryStorage {
     pub mesh_handles: Vec<Option<Handle<Mesh>>>,
     pub profiles: Vec<SocketProfile>,
-    pub vertical_indicator_to_geom_handle: HashMap<(usize, usize), HashSet<GeometryHandle>>,
-    pub side_wall_profile_to_geom_handle: HashMap<(usize, WallProfile), HashSet<GeometryHandle>>,
+    pub vertical_indicator_to_geom_handle: HashMap<GeometryStorageVerticalKey, GeometryHandleSet>,
+    pub side_wall_profile_to_geom_handle: HashMap<GeometryStorageWallKey, GeometryHandleSet>,
 }
 
 impl GeometryStorage {
@@ -25,42 +51,59 @@ impl GeometryStorage {
     pub fn store(&mut self, profile: SocketProfile, mesh: Option<Handle<Mesh>>) {
         let index = self.mesh_handles.len();
         self.mesh_handles.push(mesh);
+        let profile_side_count = profile.get_side_count();
 
         for (bottom, top, transform) in profile.get_vertical_indicator_transform_triples() {
+            let key = GeometryStorageVerticalKey::new(profile_side_count, bottom, top);
             if !self
                 .vertical_indicator_to_geom_handle
-                .contains_key(&(bottom, top))
+                .contains_key(&key)
             {
                 self.vertical_indicator_to_geom_handle
-                    .insert((bottom, top), HashSet::new());
+                    .insert(key, GeometryHandleSet::new(profile_side_count));
             }
             if let Some(handle_set) = self
                 .vertical_indicator_to_geom_handle
-                .get_mut(&(bottom, top))
+                .get_mut(&key)
             {
-                handle_set.insert(GeometryHandle { index, transform });
+                handle_set.insert(GeometryHandle { index, orientation: transform });
             }
         }
 
         for side in 0..4 {
             for (profile, transform) in profile.get_wall_profile_rotation_pairs_for_index(side) {
+                let key = GeometryStorageWallKey::new(profile_side_count, side, profile);
                 if !self
                     .side_wall_profile_to_geom_handle
-                    .contains_key(&(side, profile))
+                    .contains_key(&key)
                 {
                     self.side_wall_profile_to_geom_handle
-                        .insert((side, profile), HashSet::new());
+                        .insert(key, GeometryHandleSet::new(profile_side_count));
                 }
                 if let Some(handle_set) = self
                     .side_wall_profile_to_geom_handle
-                    .get_mut(&(side, profile))
+                    .get_mut(&key)
                 {
-                    handle_set.insert(GeometryHandle { index, transform });
+                    handle_set.insert(GeometryHandle { index, orientation: transform });
                 }
             }
         }
 
         self.profiles.push(profile);
+    }
+
+    pub fn get_vertical_matching(&self, side_count: usize, bottom: usize, top: usize) -> GeometryHandleSet {
+        if let Some(set) = self.vertical_indicator_to_geom_handle.get(&GeometryStorageVerticalKey::new(side_count, bottom, top)) {
+            set.clone()
+        } else {
+            GeometryHandleSet::new(side_count)
+        }
+    }
+
+    pub fn get_wall_union(&self, side_count: usize, side: usize, wall_bits: usize) -> GeometryHandleSet {
+        GeometryHandleSet::union(&(
+            WallProfile::from_bits(wall_bits).iter().filter_map(|profile| self.side_wall_profile_to_geom_handle.get(&GeometryStorageWallKey::new(side_count, side, *profile))).collect::<Vec<_>>()
+        ))
     }
 }
 

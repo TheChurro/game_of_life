@@ -14,7 +14,7 @@ use crate::{
 };
 
 use super::{
-    geom::{GeomOrientation, GeometryHandle, GeometryStorage, VerticalProfile, WallProfile},
+    geom::{GeomOrientation, GeometryHandle, GeometryStorage, VerticalProfile, WallProfile, handles::GeometryHandleSet},
     render::{instanced_mesh::MeshInstance, InstancedPbrBundle},
 };
 
@@ -41,10 +41,10 @@ pub struct CollapseEntry {
     pub current_top_indicator: usize,
     // Store the possible set of geometry handles from our corner handles alone. This get's modified
     // only when our corner data updates.
-    pub possible_geometry_entries_from_corner_data: HashSet<GeometryHandle>,
+    pub possible_geometry_entries_from_corner_data: GeometryHandleSet,
     // Scratch spaced used in the wave function collapse algorithm. As our neighbors choose their
     // final meshes, this set decreases in size...
-    pub geometry_entry_scratch: HashSet<GeometryHandle>,
+    pub geometry_entry_scratch: GeometryHandleSet,
 }
 
 impl CollapseEntry {
@@ -98,11 +98,11 @@ impl CollapseEntry {
             super::geom::GeomOrientation::Standard { rotations: 0 },
         );
 
-        let possible_geometry_entries_from_corner_data = geom_data
-            .vertical_indicator_to_geom_handle
-            .get(&(current_bottom_indicator, current_top_indicator))
-            .cloned()
-            .unwrap_or_default();
+        let possible_geometry_entries_from_corner_data = geom_data.get_vertical_matching(
+            corner_data.len(),
+            current_bottom_indicator,
+            current_top_indicator
+        );
 
         Self {
             index_in_tiling: index,
@@ -169,11 +169,11 @@ impl CollapseEntry {
             labels.push_str(vertical_block.label());
         }
 
-        self.possible_geometry_entries_from_corner_data = geom_data
-            .vertical_indicator_to_geom_handle
-            .get(&(self.current_bottom_indicator, self.current_top_indicator))
-            .cloned()
-            .unwrap_or_default();
+        self.possible_geometry_entries_from_corner_data = geom_data.get_vertical_matching(
+            self.corner_data.len(),
+            self.current_bottom_indicator,
+            self.current_top_indicator
+        );
         self.geometry_entry_scratch = self.possible_geometry_entries_from_corner_data.clone();
     }
 
@@ -181,25 +181,13 @@ impl CollapseEntry {
         &mut self,
         geom_data: &GeometryStorage,
         neighbor_index: usize,
-        wall: WallProfile,
-    ) -> usize {
-        let empty_set = HashSet::new();
-        let new_possible = self
-            .geometry_entry_scratch
-            .intersection(
-                geom_data
-                    .side_wall_profile_to_geom_handle
-                    .get(&(neighbor_index, wall.reverse()))
-                    .unwrap_or(&empty_set),
-            )
-            .cloned()
-            .collect::<HashSet<_>>();
-        if new_possible.len() > 0 {
+        walls: usize,
+    ) -> bool {
+        let new_possible = &self.geometry_entry_scratch & &geom_data.get_wall_union(self.corner_data.len(), neighbor_index, walls);
+        if !new_possible.empty() {
             self.geometry_entry_scratch = new_possible;
-            self.geometry_entry_scratch.len()
-        } else {
-            self.geometry_entry_scratch.len()
         }
+        self.geometry_entry_scratch.empty()
     }
 
     // Select a visual from the possible geometry entries you have
@@ -210,10 +198,10 @@ impl CollapseEntry {
     ) -> Vec<(IVec2, usize, WallProfile)> {
         if let Some(handle) = self
             .possible_geometry_entries_from_corner_data
-            .iter()
+            .into_iter()
             .next()
         {
-            self.current_mesh = Some(*handle);
+            self.current_mesh = Some(handle);
             tiling
                 .get_adjacent(self.index_in_tiling)
                 .iter()
@@ -224,7 +212,7 @@ impl CollapseEntry {
                         Some((
                             neighbor_index,
                             *neighbor_side,
-                            geom_data.profiles[handle.index].get_wall(side, handle.transform),
+                            geom_data.profiles[handle.index].get_wall(side, handle.orientation),
                         ))
                     } else {
                         None
@@ -351,8 +339,8 @@ pub fn collapse_visuals(
             {
                 return;
             }
-            if entry.geometry_entry_scratch.len() < smallest_num {
-                smallest_num = entry.geometry_entry_scratch.len();
+            if entry.geometry_entry_scratch.unique_index_count() < smallest_num {
+                smallest_num = entry.geometry_entry_scratch.unique_index_count();
                 index = (entry.height, entry.index_in_tiling);
                 entity_to_collapse = Some(entity);
             }
@@ -376,7 +364,7 @@ pub fn collapse_visuals(
                     }
                 }
 
-                match current_mesh.transform {
+                match current_mesh.orientation {
                     GeomOrientation::Standard { rotations } => {
                         transform.rotation = Quat::from_rotation_y(
                             -std::f32::consts::TAU * rotations as f32
@@ -422,7 +410,7 @@ pub fn collapse_visuals(
                 .get(&(index.0, neighbor_index))
             {
                 if let Ok((_, mut entry, _, _)) = entry_query.get_mut(*entity) {
-                    entry.neighbor_set_to(&geom_data, neighbor_side, wall);
+                    entry.neighbor_set_to(&geom_data, neighbor_side, wall.to_bits());
                 }
             }
         }
