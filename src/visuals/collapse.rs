@@ -1,18 +1,21 @@
 use bevy::{
     hierarchy::DespawnRecursiveExt,
     math::{IVec2, Quat, Vec3, Vec3Swizzles},
-    pbr::{PbrBundle, StandardMaterial},
+    pbr::StandardMaterial,
     prelude::{
-        Assets, Commands, Component, Entity, EventReader, Handle, Mesh, Query,
-        Res, ResMut, Transform, Color,
+        Assets, Color, Commands, Component, Entity, EventReader, Query, Res, ResMut, Transform, Handle,
     },
     utils::{HashMap, HashSet},
 };
 
-use crate::{simulation::SimulationState, tiling::{Tiling, TilingKind}};
+use crate::{
+    simulation::SimulationState,
+    tiling::{Tiling, TilingKind},
+};
 
-use super::geom::{
-    GeomTransformation, GeometryHandle, GeometryStorage, VerticalProfile, WallProfile,
+use super::{
+    geom::{GeomOrientation, GeometryHandle, GeometryStorage, VerticalProfile, WallProfile},
+    render::{instanced_mesh::MeshInstance, InstancedPbrBundle},
 };
 
 #[derive(Component)]
@@ -25,6 +28,7 @@ pub struct CollapseState {
     pub position_to_entry: HashMap<(u32, IVec2), Entity>,
     pub dual_tiling: Tiling,
     pub collapsed_indicies: HashSet<(u32, IVec2)>,
+    pub material: Handle<StandardMaterial>,
 }
 
 #[derive(Component)]
@@ -77,7 +81,7 @@ impl CollapseEntry {
                 }
             }))
             .collect(),
-            super::geom::GeomTransformation::Standard { rotations: 0 },
+            super::geom::GeomOrientation::Standard { rotations: 0 },
         );
 
         let current_top_indicator = VerticalProfile::compute_indicator(
@@ -91,7 +95,7 @@ impl CollapseEntry {
                 }
             }))
             .collect(),
-            super::geom::GeomTransformation::Standard { rotations: 0 },
+            super::geom::GeomOrientation::Standard { rotations: 0 },
         );
 
         let possible_geometry_entries_from_corner_data = geom_data
@@ -120,33 +124,40 @@ impl CollapseEntry {
                 break;
             }
         }
-        let bottom_sequence = self.corner_data.iter().map(|(_, h)| {
-            if *h < self.height {
-                VerticalProfile::Empty
-            } else if *h == self.height {
-                VerticalProfile::Full
-            } else {
-                VerticalProfile::Stackable
-            }
-        })
-        .collect();
+        let bottom_sequence = self
+            .corner_data
+            .iter()
+            .map(|(_, h)| {
+                if *h < self.height {
+                    VerticalProfile::Empty
+                } else if *h == self.height {
+                    VerticalProfile::Full
+                } else {
+                    VerticalProfile::Stackable
+                }
+            })
+            .collect();
         self.current_bottom_indicator = VerticalProfile::compute_indicator(
             &bottom_sequence,
-            super::geom::GeomTransformation::Standard { rotations: 0 },
+            super::geom::GeomOrientation::Standard { rotations: 0 },
         );
 
-        let top_sequence = self.corner_data.iter().map(|(_, h)| {
-            if *h < self.height + 1 {
-                VerticalProfile::Empty
-            } else if *h == self.height + 1 {
-                VerticalProfile::Full
-            } else {
-                VerticalProfile::Stackable
-            }
-        }).collect();
+        let top_sequence = self
+            .corner_data
+            .iter()
+            .map(|(_, h)| {
+                if *h < self.height + 1 {
+                    VerticalProfile::Empty
+                } else if *h == self.height + 1 {
+                    VerticalProfile::Full
+                } else {
+                    VerticalProfile::Stackable
+                }
+            })
+            .collect();
         self.current_top_indicator = VerticalProfile::compute_indicator(
             &top_sequence,
-            super::geom::GeomTransformation::Standard { rotations: 0 },
+            super::geom::GeomOrientation::Standard { rotations: 0 },
         );
 
         let mut labels = String::new();
@@ -252,20 +263,26 @@ pub fn rebuild_visuals(
                     continue;
                 }
 
+                if collapse_state.material == Default::default() {
+                    collapse_state.material = materials.add(StandardMaterial {
+                        base_color: Color::INDIGO,
+                        perceptual_roughness: 1.0,
+                        double_sided: true,
+                        ..Default::default()
+                    });
+                }
+
                 for x in 0..collapse_state.dual_tiling.max_index.x {
                     for y in 0..collapse_state.dual_tiling.max_index.y {
                         let tile = collapse_state
                             .dual_tiling
                             .get_tile_at_index(IVec2::new(x, y));
                         let entity = commands
-                            .spawn_bundle(PbrBundle {
-                                transform: Transform::from_translation(tile.position.extend(0.0).xzy()),
-                                material: materials.add(StandardMaterial {
-                                    base_color: Color::INDIGO,
-                                    perceptual_roughness: 1.0,
-                                    double_sided: true,
-                                    ..Default::default()
-                                }),
+                            .spawn_bundle(InstancedPbrBundle {
+                                transform: Transform::from_translation(
+                                    tile.position.extend(0.0).xzy(),
+                                ),
+                                material: collapse_state.material.clone(),
                                 ..Default::default()
                             })
                             .insert(CollapseEntry::new(
@@ -313,12 +330,12 @@ pub fn collapse_visuals(
     mut entry_query: Query<(
         Entity,
         &mut CollapseEntry,
-        &mut Handle<Mesh>,
+        &mut MeshInstance,
         &mut Transform,
     )>,
     geom_data: Res<GeometryStorage>,
 ) {
-    for _ in 0..500 {
+    for _ in 0..20 {
         // Early out for it we have already completely collapsed the waveform.
         if collapse_state.collapsed_indicies.len() >= collapse_state.position_to_entry.len() {
             return;
@@ -348,19 +365,19 @@ pub fn collapse_visuals(
 
         let entity_to_collapse = entity_to_collapse
             .expect("Somehow we had more indicies to collapse but did not find one to");
-        let neighbor_updates = if let Ok((_, mut entry, mut handle, mut transform)) =
+        let neighbor_updates = if let Ok((_, mut entry, mut mesh_instance, mut transform)) =
             entry_query.get_mut(entity_to_collapse)
         {
             let output = entry.select(&collapse_state.dual_tiling, &geom_data);
             if let Some(current_mesh) = entry.current_mesh {
                 if let Some(new_handle) = &geom_data.mesh_handles[current_mesh.index] {
-                    if new_handle.clone() != handle.clone() {
-                        *handle = new_handle.clone();
+                    if new_handle.clone() != mesh_instance.mesh.clone() {
+                        mesh_instance.mesh = new_handle.clone();
                     }
                 }
 
                 match current_mesh.transform {
-                    GeomTransformation::Standard { rotations } => {
+                    GeomOrientation::Standard { rotations } => {
                         transform.rotation = Quat::from_rotation_y(
                             -std::f32::consts::TAU * rotations as f32
                                 / collapse_state
@@ -371,7 +388,7 @@ pub fn collapse_visuals(
                         );
                         transform.scale = Vec3::new(1.0, 1.0, 1.0);
                     }
-                    GeomTransformation::Flipped { rotations } => {
+                    GeomOrientation::Flipped { rotations } => {
                         transform.rotation = Quat::from_rotation_y(
                             -std::f32::consts::TAU * rotations as f32
                                 / collapse_state
@@ -394,7 +411,10 @@ pub fn collapse_visuals(
 
         for (neighbor_index, neighbor_side, wall) in neighbor_updates {
             // Ignore states we have already covered
-            if collapse_state.collapsed_indicies.contains(&(index.0, neighbor_index)) {
+            if collapse_state
+                .collapsed_indicies
+                .contains(&(index.0, neighbor_index))
+            {
                 continue;
             }
             if let Some(entity) = collapse_state

@@ -81,7 +81,7 @@ pub(super) fn change_view_to(
 ) {
     for event in events.iter() {
         let grid_size = if event.0 == TilingKind::Square {
-            12
+            52
         } else {
             52
         };

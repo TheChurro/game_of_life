@@ -4,19 +4,23 @@ use bevy::{
         mouse::{MouseMotion, MouseWheel},
         Input,
     },
-    math::{IVec2, Vec2, Vec3, Quat, Mat4},
+    math::{IVec2, Mat4, Quat, Vec2, Vec3},
+    pbr::{AmbientLight, DirectionalLight, DirectionalLightBundle, StandardMaterial},
     prelude::{
-        App, AssetServer, Assets, Changed, Color, Commands, Component, CoreStage, Entity,
-        EventReader, EventWriter, Handle, Image, Mesh, MouseButton, OrthographicCameraBundle,
-        ParallelSystemDescriptorCoercion, PerspectiveCameraBundle, Query, Res, ResMut, Transform,
-        With, Without, Visibility, KeyCode, shape::Cube, PerspectiveProjection,
+        App, AssetServer, Assets, Camera, Changed, Color, Commands, Component, CoreStage, Entity,
+        EventReader, EventWriter, GlobalTransform, Handle, Image, KeyCode, Mesh, MouseButton,
+        OrthographicCameraBundle, ParallelSystemDescriptorCoercion, PerspectiveCameraBundle, Query,
+        Res, ResMut, Transform, Visibility, With, Without,
     },
-    render::{mesh::{Indices, PrimitiveTopology}, camera::{Camera3d, CameraProjection}},
+    render::{
+        camera::Camera3d,
+        mesh::{Indices, PrimitiveTopology},
+    },
     sprite::{ColorMaterial, MaterialMesh2dBundle, Mesh2dHandle},
     text::{Font, Text, Text2dBundle, TextAlignment, TextSection, TextStyle},
     utils::HashMap,
     window::Windows,
-    DefaultPlugins, pbr::{DirectionalLightBundle, PbrBundle, StandardMaterial, AmbientLight},
+    DefaultPlugins,
 };
 
 use menus::MenuState;
@@ -25,10 +29,18 @@ use tiling::{
     EquilateralDirection, RightTriangleRotation, TileShape, Tiling, TilingKind,
     OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
 };
-use visuals::{collapse::{collapse_visuals, rebuild_visuals, CollapseState, SimulationStateChanged}, geom::{SocketProfile, WallProfile}};
+use visuals::{
+    collapse::{collapse_visuals, rebuild_visuals, CollapseState, SimulationStateChanged},
+    render::{
+        instanced_mesh::InstanceMeshRenderPlugin, instanced_mesh_material::InstancedMaterialPlugin,
+    },
+};
 
 extern crate bevy;
 extern crate bevy_obj;
+extern crate bitflags;
+extern crate bytemuck;
+extern crate enum_flags;
 
 mod menus;
 mod simulation;
@@ -81,7 +93,6 @@ fn setup_world(
     sim_state: Res<SimulationState>,
     vis_state: Res<VisualState>,
     menu_state: Res<MenuState>,
-    mut standard_materials: ResMut<Assets<StandardMaterial>>,
 ) {
     for shape in [TileShape::Square, TileShape::Hexagon, TileShape::Octagon] {
         let mut verticies = vec![[0.0, 0.0, 0.0]];
@@ -223,6 +234,10 @@ fn setup_world(
     });
 
     commands.spawn_bundle(DirectionalLightBundle {
+        directional_light: DirectionalLight {
+            shadows_enabled: true,
+            ..Default::default()
+        },
         transform: Transform {
             translation: Vec3::new(0.0, 2.0, 0.0),
             rotation: Quat::from_rotation_x(-std::f32::consts::FRAC_PI_8),
@@ -273,36 +288,9 @@ fn setup_world(
         }
     }
 
-    use WallProfile::*;
-    let mesh = asset_server.load(&SocketProfile::new(
-        "ffss".to_string(),
-        vec![Bottom, Wall, Top, Llaw],
-        "eeff".to_string(),
-    ).unwrap().get_resource_location());
-    commands.spawn_bundle(PbrBundle {
-        mesh,
-        visibility: Visibility { is_visible: true },
-        transform: Transform::from_rotation(Quat::from_rotation_y(0.0)),
-        ..Default::default()
-    });
-    let cube = meshes.add(Mesh::from(Cube::new(1.0)));
-    commands.spawn_bundle(PbrBundle {
-        mesh: cube.clone(),
-        material: standard_materials.add(Color::GREEN.into()),
-        visibility: Visibility { is_visible: true },
-        transform: Transform::from_xyz(1.0, 0.0, 0.0),
-        ..Default::default()
-    });
-    commands.spawn_bundle(PbrBundle {
-        mesh: cube.clone(),
-        material: standard_materials.add(Color::RED.into()),
-        visibility: Visibility { is_visible: true },
-        transform: Transform::from_xyz(0.0, 0.0, 1.0),
-        ..Default::default()
-    });
-
     let mut camera = PerspectiveCameraBundle::new_3d();
-    camera.transform = Transform::from_xyz(-20.0, 20.0, -20.0).looking_at(Vec3::new(25.0, 0.0, 25.0), Vec3::Y);
+    camera.transform =
+        Transform::from_xyz(-20.0, 20.0, -20.0).looking_at(Vec3::new(25.0, 0.0, 25.0), Vec3::Y);
     commands.spawn_bundle(camera);
     commands.spawn_bundle(OrthographicCameraBundle::new_2d());
 }
@@ -434,7 +422,7 @@ fn input_system(
     windows: Res<Windows>,
     ui_roots_query: Query<Entity, (With<ui::UiElement>, Without<Parent>)>,
     ui_element_query: Query<(&Transform, &mut ui::UiElement, Option<&Children>)>,
-    camera: Query<(&Transform, &PerspectiveProjection), With<Camera3d>>,
+    camera: Query<(&GlobalTransform, &Camera), With<Camera3d>>,
 ) {
     let processed_input = input_state.process_inputs(
         &mouse_input,
@@ -465,78 +453,83 @@ fn input_system(
 
     if vis_state.mouse_down {
         let primary_window = windows.primary();
-        let mouse_pos = windows.primary().cursor_position().unwrap();
+        if let Some(mouse_pos) = windows.primary().cursor_position() {
+            if vis_state.hide {
+                if let Ok((transform, camera)) = camera.get_single() {
+                    let camera_transform: Mat4 = transform.compute_matrix();
+                    let camera_matrix: Mat4 = camera.projection_matrix.inverse();
+                    let view_matrix = camera_transform * camera_matrix;
 
-        if vis_state.hide {
-            if let Ok((transform, camera)) = camera.get_single() {
-                let camera_matrix: Mat4 = transform.compute_matrix() * camera.get_projection_matrix().inverse();
+                    let x = 2.0 * (mouse_pos.x / primary_window.width() as f32) - 1.0;
+                    let y = 2.0 * (mouse_pos.y / primary_window.height() as f32) - 1.0;
 
-                let x = 2.0 * (mouse_pos.x / primary_window.width() as f32) - 1.0;
-                let y = 2.0 * (mouse_pos.y / primary_window.height() as f32) - 1.0;
+                    let near = view_matrix.project_point3(Vec3::new(x, y, -1.0));
+                    let far = view_matrix.project_point3(Vec3::new(x, y, 1.0));
 
-                let near = camera_matrix * Vec3::new(x, y, 0.0).extend(1.0);
-                let near = if near.w < 0.00001 { near.truncate() } else { near.truncate() / near.w };
-                let far = camera_matrix * Vec3::new(x, y, 1.0).extend(1.0);
-                let far = far.truncate() / far.w;
+                    let dir = (far - near).normalize();
 
-                let dir = (far - near).normalize();
+                    let new_pos = if dir.y.signum() != near.y.signum() {
+                        let time_to_plane = near.y / -dir.y;
+                        Some(near + dir * time_to_plane)
+                    } else {
+                        None
+                    };
 
-                let new_pos = if dir.y.signum() != near.y.signum() {
-                    let time_to_plane = near.y / -dir.y;
-                    Some(near + dir * time_to_plane)
-                } else { None };
-
-                if keyboard.pressed(KeyCode::LShift) {
-                    if processed_input.movement.length_squared() > 0.01 || vis_state.mouse_moved {
-                        vis_state.mouse_moved = true;
-                        vis_state.camera_angle += processed_input.movement;
-                        vis_state.camera_angle.y = vis_state.camera_angle.y.clamp(20.0, 90.0);
-                        vis_state.camera_angle.x = vis_state.camera_angle.x % 360.0;
-                    }
-                } else {
-                    if let Some(last_pos) = vis_state.last_click_pos {
-                        let offset = new_pos.unwrap_or(last_pos) - last_pos;
-                        if vis_state.mouse_moved || offset.length_squared() > 0.1 {
-                            vis_state.camera_offset += offset;
-                            vis_state.last_click_pos = new_pos;
+                    if keyboard.pressed(KeyCode::LShift) {
+                        if processed_input.movement.length_squared() > 0.01 || vis_state.mouse_moved
+                        {
                             vis_state.mouse_moved = true;
+                            vis_state.camera_angle += processed_input.movement;
+                            vis_state.camera_angle.y = vis_state.camera_angle.y.clamp(5.0, 85.0);
+                            vis_state.camera_angle.x = vis_state.camera_angle.x % 360.0;
                         }
                     } else {
-                        vis_state.last_click_pos = new_pos;
+                        if let Some(last_pos) = vis_state.last_click_pos {
+                            let offset = last_pos - new_pos.unwrap_or(last_pos);
+                            if vis_state.mouse_moved || offset.length_squared() > 0.1 {
+                                vis_state.camera_offset += offset * 0.5;
+                                vis_state.last_click_pos = new_pos;
+                                vis_state.mouse_moved = true;
+                            }
+                        } else {
+                            vis_state.last_click_pos = new_pos;
+                        }
                     }
+
+                    if mouse_input.just_released(MouseButton::Left) {
+                        vis_state.mouse_down = false;
+                        if !vis_state.mouse_moved {
+                            if let Some(pos) = new_pos {
+                                let tile = sim_state
+                                    .tiling
+                                    .get_tile_containing(Vec2::new(pos.x, pos.z));
+                                let target_state = (sim_state.get_at(tile.index) + 1)
+                                    % sim_state.get_num_states_for_shape(tile.shape);
+                                sim_state.set_at(tile.index, target_state);
+                            }
+                        }
+                    }
+                }
+            } else {
+                if processed_input.movement.length_squared() > 0.001 {
+                    vis_state.mouse_moved = true;
+                    vis_state.cur_offset = sim_state.tiling.adjust_position(
+                        processed_input.movement * Vec2::new(-1.0, 1.0) / vis_state.scale
+                            + vis_state.cur_offset,
+                    );
                 }
 
                 if mouse_input.just_released(MouseButton::Left) {
                     vis_state.mouse_down = false;
                     if !vis_state.mouse_moved {
-                        if let Some(pos) = new_pos {
-                            let tile = sim_state.tiling.get_tile_containing(Vec2::new(pos.x, pos.z));
-                            let target_state = (sim_state.get_at(tile.index) + 1)
-                                % sim_state.get_num_states_for_shape(tile.shape);
-                            sim_state.set_at(tile.index, target_state);
-                        }
+                        let mouse_pos = mouse_pos
+                            - Vec2::new(primary_window.width(), primary_window.height()) / 2.0;
+                        let adjusted_position = mouse_pos / vis_state.scale + vis_state.cur_offset;
+                        let tile = sim_state.tiling.get_tile_containing(adjusted_position);
+                        let target_state = (sim_state.get_at(tile.index) + 1)
+                            % sim_state.get_num_states_for_shape(tile.shape);
+                        sim_state.set_at(tile.index, target_state);
                     }
-                }
-            }
-        } else {
-            if processed_input.movement.length_squared() > 0.001 {
-                vis_state.mouse_moved = true;
-                vis_state.cur_offset = sim_state.tiling.adjust_position(
-                    processed_input.movement * Vec2::new(-1.0, 1.0) / vis_state.scale
-                        + vis_state.cur_offset,
-                );
-            }
-
-            if mouse_input.just_released(MouseButton::Left) {
-                vis_state.mouse_down = false;
-                if !vis_state.mouse_moved {
-                    let mouse_pos =
-                    mouse_pos - Vec2::new(primary_window.width(), primary_window.height()) / 2.0;
-                    let adjusted_position = mouse_pos / vis_state.scale + vis_state.cur_offset;
-                    let tile = sim_state.tiling.get_tile_containing(adjusted_position);
-                    let target_state = (sim_state.get_at(tile.index) + 1)
-                        % sim_state.get_num_states_for_shape(tile.shape);
-                    sim_state.set_at(tile.index, target_state);
                 }
             }
         }
@@ -553,13 +546,20 @@ fn process_simulation(
     }
 }
 
-fn move_camera(vis_state: Res<VisualState>,mut camera: Query<&mut Transform, With<Camera3d>>,) {
+fn move_camera(vis_state: Res<VisualState>, mut camera: Query<&mut Transform, With<Camera3d>>) {
     camera.for_each_mut(|mut transform| {
-        *transform = Transform::from_translation(Vec3::new(
-            vis_state.scale * vis_state.camera_angle.x.to_radians().cos() * vis_state.camera_angle.y.to_radians().cos(),
-            vis_state.scale * vis_state.camera_angle.y.to_radians().sin(),
-            vis_state.scale * vis_state.camera_angle.x.to_radians().sin() * vis_state.camera_angle.y.to_radians().cos(),
-        ) + vis_state.camera_offset).looking_at(vis_state.camera_offset, Vec3::Y);
+        *transform = Transform::from_translation(
+            Vec3::new(
+                vis_state.scale
+                    * vis_state.camera_angle.x.to_radians().cos()
+                    * vis_state.camera_angle.y.to_radians().cos(),
+                vis_state.scale * vis_state.camera_angle.y.to_radians().sin(),
+                vis_state.scale
+                    * vis_state.camera_angle.x.to_radians().sin()
+                    * vis_state.camera_angle.y.to_radians().cos(),
+            ) + vis_state.camera_offset,
+        )
+        .looking_at(vis_state.camera_offset, Vec3::Y);
     });
 }
 
@@ -581,6 +581,8 @@ fn main() {
             .register_event_generator::<menus::RuleUpdateEventGenerator>(),
     );
     app.add_plugin(menus::MenusPlugin);
+    app.add_plugin(InstanceMeshRenderPlugin);
+    app.add_plugin(InstancedMaterialPlugin::<StandardMaterial>::default());
     app.insert_resource(VisualsCache {
         meshes: Default::default(),
         states: Default::default(),
@@ -607,6 +609,7 @@ fn main() {
         position_to_entry: Default::default(),
         dual_tiling: dual,
         collapsed_indicies: Default::default(),
+        material: Default::default(),
     })
     .add_event::<SimulationStateChanged>()
     .insert_resource(visuals::geom::GeometryStorage::new())

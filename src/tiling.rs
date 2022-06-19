@@ -555,7 +555,7 @@ impl Tiling {
             TilingKind::Square => Self {
                 kind: TilingKind::Square,
                 offset: Vec2::new(-0.5, -0.5),
-                max_index: self.max_index + IVec2::new(2, 2),
+                max_index: self.max_index + IVec2::new(1, 1),
             },
             TilingKind::Hexagonal => Self {
                 kind: TilingKind::EquilateralTriangular,
@@ -592,7 +592,7 @@ impl Tiling {
         }
     }
 
-    pub fn get_adjacent(&self, index: IVec2) -> &'static [(i32, i32, usize)] {
+    pub fn get_adjacent(&self, _index: IVec2) -> &'static [(i32, i32, usize)] {
         match self.kind {
             TilingKind::Square => &[(1, 0, 2), (0, 1, 3), (-1, 0, 0), (0, -1, 1), ],
             TilingKind::Hexagonal => todo!(),// &[(0, 1, 3), (1, 1, 4), (-1, 0, 5), (1, 0, 0), (-1, -1, 1), (0, -1, 2)],
