@@ -101,9 +101,9 @@ impl GeometryStorage {
     }
 
     pub fn get_wall_union(&self, side_count: usize, side: usize, wall_bits: usize) -> GeometryHandleSet {
-        GeometryHandleSet::union(&(
-            WallProfile::from_bits(wall_bits).iter().filter_map(|profile| self.side_wall_profile_to_geom_handle.get(&GeometryStorageWallKey::new(side_count, side, *profile))).collect::<Vec<_>>()
-        ))
+        GeometryHandleSet::union(
+            WallProfile::from_bits(wall_bits).iter().filter_map(|profile| self.side_wall_profile_to_geom_handle.get(&GeometryStorageWallKey::new(side_count, side, *profile)))
+        )
     }
 }
 

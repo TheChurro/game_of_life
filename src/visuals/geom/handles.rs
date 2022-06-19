@@ -68,7 +68,8 @@ impl GeometryHandleSet {
     }
 
     /// Compute the union of a number of GeometryHandleSets.
-    pub fn union(sets: &[&GeometryHandleSet]) -> GeometryHandleSet {
+    pub fn union<'a, I: IntoIterator<Item=&'a GeometryHandleSet>>(sets: I) -> GeometryHandleSet {
+        let sets = sets.into_iter().collect::<Vec<_>>();
         let mut new_entries = Vec::new();
         let mut max_rotations = 0;
         let mut last_min_index = None;
@@ -114,7 +115,8 @@ impl GeometryHandleSet {
     }
 
     /// Compute the intersection of a number of geometry handle sets.
-    pub fn intersection(sets: &[&GeometryHandleSet]) -> GeometryHandleSet {
+    pub fn intersection<'a, I : IntoIterator<Item=&'a GeometryHandleSet>>(sets: I) -> GeometryHandleSet {
+        let sets = sets.into_iter().collect::<Vec<_>>();
         // Early out for single set intersection
         if sets.len() == 1 {
             return GeometryHandleSet {
@@ -192,7 +194,7 @@ impl BitOr for &GeometryHandleSet {
     type Output = GeometryHandleSet;
 
     fn bitor(self, rhs: Self) -> Self::Output {
-        GeometryHandleSet::union(&[self, &rhs])
+        GeometryHandleSet::union(vec![self, &rhs].drain(..))
     }
 }
 
@@ -200,7 +202,7 @@ impl BitAnd for &GeometryHandleSet {
     type Output = GeometryHandleSet;
 
     fn bitand(self, rhs: Self) -> Self::Output {
-        GeometryHandleSet::intersection(&[self, &rhs])
+        GeometryHandleSet::intersection(vec![self, &rhs].drain(..))
     }
 }
 
@@ -376,7 +378,7 @@ mod tests {
             orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
-        let union = GeometryHandleSet::union(&[&set0, &set1]);
+        let union = GeometryHandleSet::union([&set0, &set1]);
         assert_eq!(union.entries, vec![
             GeometryHandleSetEntry { index: 1, orientations: 0x6 },
             GeometryHandleSetEntry { index: 2, orientations: 0x4 },
@@ -414,7 +416,7 @@ mod tests {
             orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
-        let union = GeometryHandleSet::union(&[&set0, &set1, &set2]);
+        let union = GeometryHandleSet::union([&set0, &set1, &set2]);
         assert_eq!(union.entries, vec![
             GeometryHandleSetEntry { index: 1, orientations: 0x2 },
             GeometryHandleSetEntry { index: 2, orientations: 0x4 },
@@ -453,7 +455,7 @@ mod tests {
             orientation: GeomOrientation::Standard { rotations: 0 },
         });
 
-        let union = GeometryHandleSet::union(&[&set0, &set1, &set2]);
+        let union = GeometryHandleSet::union([&set0, &set1, &set2]);
         assert_eq!(union.entries, vec![
             GeometryHandleSetEntry { index: 1, orientations: 0x7 },
             GeometryHandleSetEntry { index: 2, orientations: 0x4 },
@@ -462,8 +464,12 @@ mod tests {
 
     #[test]
     fn union_single() {
-        let set = GeometryHandleSet::new(5);
-        let union = GeometryHandleSet::union(&[&set]);
+        let mut set = GeometryHandleSet::new(5);
+        set.insert(GeometryHandle {
+            index: 0,
+            orientation: GeomOrientation::Flipped { rotations: 1 }
+        });
+        let union = GeometryHandleSet::union([&set]);
         assert_eq!(union.entries, set.entries);
         assert_eq!(union.max_rotations, set.max_rotations);
     }
@@ -514,7 +520,7 @@ mod tests {
             orientation: GeomOrientation::Standard { rotations: 0 },
         });
 
-        let intersection = GeometryHandleSet::intersection(&[&set0, &set1]);
+        let intersection = GeometryHandleSet::intersection([&set0, &set1]);
         assert_eq!(intersection.entries, vec![
             GeometryHandleSetEntry { index: 1, orientations: 0x6 },
             GeometryHandleSetEntry { index: 2, orientations: 0x1 },
@@ -545,7 +551,7 @@ mod tests {
             orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
-        let intersection = GeometryHandleSet::intersection(&[&set0, &set1]);
+        let intersection = GeometryHandleSet::intersection([&set0, &set1]);
         assert_eq!(intersection.entries, vec![
         ]);
         assert_eq!(intersection.max_rotations, 5);
@@ -588,7 +594,7 @@ mod tests {
             orientation: GeomOrientation::Standard { rotations: 1 },
         });
 
-        let intersection = GeometryHandleSet::intersection(&[&set0, &set1, &set2]);
+        let intersection = GeometryHandleSet::intersection([&set0, &set1, &set2]);
         assert_eq!(intersection.entries, vec![
             GeometryHandleSetEntry { index: 3, orientations: 0x2 },
         ]);
@@ -623,7 +629,7 @@ mod tests {
             orientation: GeomOrientation::Standard { rotations: 2 },
         });
 
-        let intersection = GeometryHandleSet::intersection(&[&set0, &set1, &set2]);
+        let intersection = GeometryHandleSet::intersection([&set0, &set1, &set2]);
         assert_eq!(intersection.entries, vec![
             GeometryHandleSetEntry { index: 1, orientations: 0x4 },
         ]);
@@ -631,8 +637,12 @@ mod tests {
 
     #[test]
     fn intersection_single() {
-        let set = GeometryHandleSet::new(5);
-        let union = GeometryHandleSet::intersection(&[&set]);
+        let mut set = GeometryHandleSet::new(5);
+        set.insert(GeometryHandle {
+            index: 0,
+            orientation: GeomOrientation::Flipped { rotations: 1 }
+        });
+        let union = GeometryHandleSet::intersection([&set]);
         assert_eq!(union.entries, set.entries);
         assert_eq!(union.max_rotations, set.max_rotations);
     }
