@@ -7,13 +7,15 @@ use bevy::{
     },
     math::{Mat4, Size, Vec4},
     pbr::{
-        GlobalLightMeta, GpuLights, LightMeta, MeshPipelineKey, MeshViewBindGroup, NotShadowCaster,
-        NotShadowReceiver, SetMeshBindGroup, SetShadowViewBindGroup, Shadow, ShadowPipeline,
-        ViewClusterBindings, ViewShadowBindings, CLUSTERED_FORWARD_STORAGE_BUFFER_COUNT, StandardMaterial, MeshUniform,
+        GlobalLightMeta, GpuLights, LightMeta, MeshPipelineKey, MeshUniform, MeshViewBindGroup,
+        NotShadowCaster, NotShadowReceiver, SetMeshBindGroup, SetShadowViewBindGroup, Shadow,
+        ShadowPipeline, StandardMaterial, ViewClusterBindings, ViewShadowBindings,
+        CLUSTERED_FORWARD_STORAGE_BUFFER_COUNT,
     },
     prelude::{
         Assets, Commands, Component, ComputedVisibility, Entity, FromWorld, GlobalTransform,
-        Handle, HandleUntyped, Image, Local, Mesh, Plugin, Query, Res, With, Without, World, Transform, Visibility,
+        Handle, HandleUntyped, Image, Local, Mesh, Plugin, Query, Res, Transform, Visibility, With,
+        Without, World,
     },
     render::{
         mesh::{GpuBufferInfo, MeshVertexBufferLayout},
@@ -25,7 +27,7 @@ use bevy::{
         render_resource::*,
         renderer::{RenderDevice, RenderQueue},
         texture::{BevyDefault, GpuImage, TextureFormatPixelInfo},
-        view::{ViewUniform, ViewUniforms, NoFrustumCulling},
+        view::{NoFrustumCulling, ViewUniform, ViewUniforms},
         RenderApp, RenderStage,
     },
     utils::HashMap,
@@ -131,13 +133,17 @@ pub fn extract_meshes(
     >,
 ) {
     let mut caster_map =
-        HashMap::<(Handle<Mesh>, Handle<StandardMaterial>), InstancedMeshTransforms>::with_capacity(*previous_caster_len);
+        HashMap::<(Handle<Mesh>, Handle<StandardMaterial>), InstancedMeshTransforms>::with_capacity(
+            *previous_caster_len,
+        );
     for (computed_visibility, transform, instance, material, _) in caster_query.iter() {
         if !computed_visibility.is_visible {
             continue;
         }
         let transform = transform.compute_matrix();
-        if let Some(instance_data) = caster_map.get_mut(&(instance.mesh.clone_weak(), material.clone_weak())) {
+        if let Some(instance_data) =
+            caster_map.get_mut(&(instance.mesh.clone_weak(), material.clone_weak()))
+        {
             instance_data
                 .transforms
                 .push(InstanceTransforms::new(transform));
@@ -151,7 +157,23 @@ pub fn extract_meshes(
         }
     }
     *previous_caster_len = caster_map.len();
-    commands.spawn_batch(caster_map.into_iter().map(|((a, b), c)| (a, b, c, Transform::default(), GlobalTransform::default(), Visibility{ is_visible: true }, MeshUniform { transform: Transform::default().compute_matrix(), inverse_transpose_model: Transform::default().compute_matrix(), flags: MeshFlags::SHADOW_RECEIVER.bits()  }, ComputedVisibility{ is_visible: true }, NoFrustumCulling)));
+    commands.spawn_batch(caster_map.into_iter().map(|((a, b), c)| {
+        (
+            a,
+            b,
+            c,
+            Transform::default(),
+            GlobalTransform::default(),
+            Visibility { is_visible: true },
+            MeshUniform {
+                transform: Transform::default().compute_matrix(),
+                inverse_transpose_model: Transform::default().compute_matrix(),
+                flags: MeshFlags::SHADOW_RECEIVER.bits(),
+            },
+            ComputedVisibility { is_visible: true },
+            NoFrustumCulling,
+        )
+    }));
 
     let mut not_caster_map =
         HashMap::<Handle<Mesh>, InstancedMeshTransforms>::with_capacity(*previous_not_caster_len);
@@ -517,9 +539,7 @@ impl SpecializedMeshPipeline for InstancedMeshPipeline {
             vertex_attributes.push(Mesh::ATTRIBUTE_JOINT_INDEX.at_shader_location(4));
             vertex_attributes.push(Mesh::ATTRIBUTE_JOINT_WEIGHT.at_shader_location(5));
             bind_group_layout.push(self.skinned_mesh_layout.clone());
-        }
-        else
-        {
+        } else {
             bind_group_layout.push(self.mesh_layout.clone());
         }
 

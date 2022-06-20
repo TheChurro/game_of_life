@@ -23,14 +23,17 @@ use bevy::{
     DefaultPlugins,
 };
 
-use menus::MenuState;
+use menus::{Inspect, MenuState};
 use simulation::SimulationState;
 use tiling::{
     EquilateralDirection, RightTriangleRotation, TileShape, Tiling, TilingKind,
     OCTAGON_SQUARE_DIFFERENCE_OF_CENTER,
 };
 use visuals::{
-    collapse::{collapse_visuals, rebuild_visuals, CollapseState, SimulationStateChanged},
+    collapse::{
+        collapse_visuals, rebuild_visuals, CollapseEntryIndex, CollapseState,
+        SimulationStateChanged,
+    },
     render::{
         instanced_mesh::InstanceMeshRenderPlugin, instanced_mesh_material::InstancedMaterialPlugin,
     },
@@ -42,12 +45,12 @@ extern crate bitflags;
 extern crate bytemuck;
 extern crate enum_flags;
 
+mod hashmap_ext;
 mod menus;
 mod simulation;
 mod tiling;
 mod ui;
 mod visuals;
-mod hashmap_ext;
 
 #[derive(Component)]
 struct VisualState {
@@ -414,6 +417,7 @@ fn update_tile_visual(
 fn input_system(
     mut vis_state: ResMut<VisualState>,
     mut sim_state: ResMut<SimulationState>,
+    mut collapse_state: ResMut<CollapseState>,
 
     keyboard: Res<Input<KeyCode>>,
     mut input_state: ResMut<ui::InputState>,
@@ -424,6 +428,7 @@ fn input_system(
     ui_roots_query: Query<Entity, (With<ui::UiElement>, Without<Parent>)>,
     ui_element_query: Query<(&Transform, &mut ui::UiElement, Option<&Children>)>,
     camera: Query<(&GlobalTransform, &Camera), With<Camera3d>>,
+    mut inspect_events: EventWriter<Inspect>,
 ) {
     let processed_input = input_state.process_inputs(
         &mouse_input,
@@ -436,6 +441,14 @@ fn input_system(
 
     if keyboard.just_pressed(KeyCode::H) && !vis_state.mouse_down {
         vis_state.hide = !vis_state.hide;
+    }
+
+    if keyboard.just_pressed(KeyCode::P) {
+        collapse_state.stepping_mode = !collapse_state.stepping_mode;
+    }
+
+    if keyboard.just_pressed(KeyCode::S) {
+        collapse_state.steps += 1;
     }
 
     if processed_input.over_some_ui {
@@ -501,12 +514,26 @@ fn input_system(
                         vis_state.mouse_down = false;
                         if !vis_state.mouse_moved {
                             if let Some(pos) = new_pos {
-                                let tile = sim_state
-                                    .tiling
-                                    .get_tile_containing(Vec2::new(pos.x, pos.z));
-                                let target_state = (sim_state.get_at(tile.index) + 1)
-                                    % sim_state.get_num_states_for_shape(tile.shape);
-                                sim_state.set_at(tile.index, target_state);
+                                if keyboard.pressed(KeyCode::LShift)
+                                    || keyboard.pressed(KeyCode::RShift)
+                                {
+                                    let tile = collapse_state
+                                        .dual_tiling
+                                        .get_tile_containing(Vec2::new(pos.x, pos.z));
+                                    if let Some(entity) = collapse_state
+                                        .position_to_entry
+                                        .get(&CollapseEntryIndex::new(tile.index, 0))
+                                    {
+                                        inspect_events.send(Inspect(*entity));
+                                    }
+                                } else {
+                                    let tile = sim_state
+                                        .tiling
+                                        .get_tile_containing(Vec2::new(pos.x, pos.z));
+                                    let target_state = (sim_state.get_at(tile.index) + 1)
+                                        % sim_state.get_num_states_for_shape(tile.shape);
+                                    sim_state.set_at(tile.index, target_state);
+                                }
                             }
                         }
                     }
@@ -578,6 +605,7 @@ fn main() {
             .register_event::<menus::ChangeViewTo>()
             .register_event::<menus::ShowRulesFor>()
             .register_event::<menus::TogglePlay>()
+            .register_event::<menus::Inspect>()
             .register_event_generator::<menus::RuleUpdateEventGenerator>(),
     );
     app.add_plugin(menus::MenusPlugin);

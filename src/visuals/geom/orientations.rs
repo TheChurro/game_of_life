@@ -1,4 +1,3 @@
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum GeomOrientation {
     Standard { rotations: usize },
@@ -6,11 +5,17 @@ pub enum GeomOrientation {
 }
 
 impl GeomOrientation {
-    pub fn get_index_in_sequence(&self, in_index: usize, max_index: usize) -> usize {
+    pub fn get_index_in_sequence(
+        &self,
+        in_index: usize,
+        max_index: usize,
+        is_corner: bool,
+    ) -> usize {
         match self {
             GeomOrientation::Standard { rotations } => (in_index + *rotations) % max_index,
             GeomOrientation::Flipped { rotations } => {
-                max_index - 1 - ((in_index + *rotations) % max_index)
+                (4 * max_index - if is_corner { 1 } else { 2 } - in_index + *rotations)
+                    .rem_euclid(max_index)
             }
         }
     }
@@ -25,20 +30,26 @@ impl GeomOrientation {
     pub const fn to_bits(self) -> usize {
         match self {
             GeomOrientation::Standard { rotations } => 1 << rotations,
-            GeomOrientation::Flipped { rotations } => 1 >> (usize::BITS as usize - 1 - rotations),
+            GeomOrientation::Flipped { rotations } => 1 << (usize::BITS as usize - 1 - rotations),
         }
     }
 
-    pub fn from_bits(bits: usize, max_rotations: usize) -> impl Iterator<Item=GeomOrientation> {
+    pub fn from_bits(bits: usize, max_rotations: usize) -> impl Iterator<Item = GeomOrientation> {
         (0..2 * max_rotations).filter_map(move |rotation| {
             let transform = if rotation < max_rotations {
-                GeomOrientation::Standard { rotations: rotation }
+                GeomOrientation::Standard {
+                    rotations: rotation,
+                }
             } else {
-                GeomOrientation::Flipped { rotations: rotation - max_rotations }
+                GeomOrientation::Flipped {
+                    rotations: rotation - max_rotations,
+                }
             };
             if transform.to_bits() & bits != 0 {
                 Some(transform)
-            } else { None }
+            } else {
+                None
+            }
         })
     }
 }

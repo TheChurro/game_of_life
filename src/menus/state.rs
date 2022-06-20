@@ -13,7 +13,7 @@ use bevy::{
 
 use crate::{tiling::*, ui::*};
 
-use super::{events::*, RulesContainer};
+use super::{events::*, tile_inspect::TileInspector, RulesContainer};
 
 pub struct MenuState {
     pub button: Handle<Image>,
@@ -276,7 +276,7 @@ pub fn setup_menus(
 
     let mut play_step = commands.spawn();
     play_step.insert(AnchoredUi {
-        x_percent: 1.0,
+        x_percent: 0.5,
         y_percent: 0.0,
         width_grow: None,
         height_grow: None,
@@ -295,6 +295,33 @@ pub fn setup_menus(
         super::HEADER_MARGIN,
     );
     play_step.insert(Transform::from_translation(Vec3::new(0.0, 0.0, 10.0))); // Move it up.
+
+    commands
+        .spawn()
+        .insert_bundle(SpriteBundle {
+            sprite: Sprite {
+                color: Color::rgba(1.0, 1.0, 1.0, 0.5),
+                ..Default::default()
+            },
+            transform: Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
+            ..Default::default()
+        })
+        .insert(UiElement {
+            size: Size::new(300.0, 500.0),
+            scroll_state: UiStateDetails {
+                accepts_state: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        })
+        .insert(AnchoredUi {
+            x_percent: 1.0,
+            y_percent: 0.5,
+            width_grow: None,
+            height_grow: Some(1.0),
+        })
+        .insert(TileInspector {})
+        .insert(UiLinearScroll::default());
 
     events.send(ChangeViewTo(TilingKind::Square));
 }

@@ -1,5 +1,4 @@
-use super::{socket::SocketProfileCreationError, orientations::GeomOrientation};
-
+use super::{orientations::GeomOrientation, socket::SocketProfileCreationError};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash)]
 pub enum VerticalProfile {
@@ -50,13 +49,10 @@ impl VerticalProfile {
         Ok(sequence)
     }
 
-    pub fn compute_indicator(
-        sequence: &Vec<VerticalProfile>,
-        rotation: GeomOrientation,
-    ) -> usize {
+    pub fn compute_indicator(sequence: &Vec<VerticalProfile>, rotation: GeomOrientation) -> usize {
         let mut indicator = 0;
         for i in 0..sequence.len() {
-            indicator |= sequence[rotation.get_index_in_sequence(i, sequence.len())].value()
+            indicator |= sequence[rotation.get_index_in_sequence(i, sequence.len(), true)].value()
                 << i * VERTICAL_PROFILE_LEN;
         }
         indicator

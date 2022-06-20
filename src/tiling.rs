@@ -594,7 +594,7 @@ impl Tiling {
 
     pub fn get_adjacent(&self, _index: IVec2) -> &'static [(i32, i32, usize)] {
         match self.kind {
-            TilingKind::Square => &[(1, 0, 2), (0, 1, 3), (-1, 0, 0), (0, -1, 1), ],
+            TilingKind::Square => &[(0, 1, 2), (1, 0, 3), (0, -1, 0), (-1, 0, 1),],
             TilingKind::Hexagonal => todo!(),// &[(0, 1, 3), (1, 1, 4), (-1, 0, 5), (1, 0, 0), (-1, -1, 1), (0, -1, 2)],
             TilingKind::OctagonAndSquare => {
                 todo!()

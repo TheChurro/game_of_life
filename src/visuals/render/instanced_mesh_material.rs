@@ -6,10 +6,12 @@ use bevy::{
         lifetimeless::{Read, SQuery, SRes},
         SystemParamItem,
     },
-    pbr::{AlphaMode, MeshPipelineKey, SetMeshViewBindGroup, SpecializedMaterial, SetMeshBindGroup},
+    pbr::{
+        AlphaMode, MeshPipelineKey, SetMeshBindGroup, SetMeshViewBindGroup, SpecializedMaterial,
+    },
     prelude::{
         error, AddAsset, App, AssetServer, Entity, FromWorld, Handle, Mesh, Msaa, Plugin, Query,
-        Res, ResMut, Shader, World, With,
+        Res, ResMut, Shader, With, World,
     },
     render::{
         mesh::MeshVertexBufferLayout,
@@ -223,7 +225,7 @@ fn queue_instanced_material_meshes<M: SpecializedMaterial>(
 
                     // NOTE: row 2 of the inverse view matrix dotted with column 3 of the model matrix
                     // gives the z component of translation of the mesh in view space
-                    let mesh_z = 0.0;//inverse_view_row_2.dot(mesh_uniform.transform.col(3));
+                    let mesh_z = 0.0; //inverse_view_row_2.dot(mesh_uniform.transform.col(3));
                     match alpha_mode {
                         AlphaMode::Opaque => {
                             opaque_phase.add(Opaque3d {

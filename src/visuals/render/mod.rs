@@ -1,5 +1,5 @@
 use bevy::{
-    pbr::{SpecializedMaterial},
+    pbr::SpecializedMaterial,
     prelude::{Bundle, ComputedVisibility, GlobalTransform, Handle, Transform, Visibility},
 };
 

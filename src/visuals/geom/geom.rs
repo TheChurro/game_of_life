@@ -1,9 +1,13 @@
 use bevy::{
-    prelude::{AssetServer, Handle, Mesh, Res, ResMut},
+    prelude::{info, AssetServer, Handle, Mesh, Res, ResMut},
     utils::HashMap,
 };
 
-use super::{socket::SocketProfile, handles::{GeometryHandle, GeometryHandleSet}, WallProfile};
+use super::{
+    handles::{GeometryHandle, GeometryHandleSet},
+    socket::SocketProfile,
+    WallProfile,
+};
 
 #[derive(PartialEq, Eq, Hash, Clone, Copy)]
 pub struct GeometryStorageVerticalKey {
@@ -14,7 +18,11 @@ pub struct GeometryStorageVerticalKey {
 
 impl GeometryStorageVerticalKey {
     pub const fn new(side_count: usize, bottom: usize, top: usize) -> Self {
-        Self { side_count,  bottom_profile: bottom, top_profile: top }
+        Self {
+            side_count,
+            bottom_profile: bottom,
+            top_profile: top,
+        }
     }
 }
 
@@ -27,7 +35,11 @@ pub struct GeometryStorageWallKey {
 
 impl GeometryStorageWallKey {
     pub const fn new(side_count: usize, side: usize, profile: WallProfile) -> Self {
-        Self { side_count, side, profile }
+        Self {
+            side_count,
+            side,
+            profile,
+        }
     }
 }
 
@@ -55,36 +67,30 @@ impl GeometryStorage {
 
         for (bottom, top, transform) in profile.get_vertical_indicator_transform_triples() {
             let key = GeometryStorageVerticalKey::new(profile_side_count, bottom, top);
-            if !self
-                .vertical_indicator_to_geom_handle
-                .contains_key(&key)
-            {
+            if !self.vertical_indicator_to_geom_handle.contains_key(&key) {
                 self.vertical_indicator_to_geom_handle
                     .insert(key, GeometryHandleSet::new(profile_side_count));
             }
-            if let Some(handle_set) = self
-                .vertical_indicator_to_geom_handle
-                .get_mut(&key)
-            {
-                handle_set.insert(GeometryHandle { index, orientation: transform });
+            if let Some(handle_set) = self.vertical_indicator_to_geom_handle.get_mut(&key) {
+                handle_set.insert(GeometryHandle {
+                    index,
+                    orientation: transform,
+                });
             }
         }
 
         for side in 0..4 {
             for (profile, transform) in profile.get_wall_profile_rotation_pairs_for_index(side) {
                 let key = GeometryStorageWallKey::new(profile_side_count, side, profile);
-                if !self
-                    .side_wall_profile_to_geom_handle
-                    .contains_key(&key)
-                {
+                if !self.side_wall_profile_to_geom_handle.contains_key(&key) {
                     self.side_wall_profile_to_geom_handle
                         .insert(key, GeometryHandleSet::new(profile_side_count));
                 }
-                if let Some(handle_set) = self
-                    .side_wall_profile_to_geom_handle
-                    .get_mut(&key)
-                {
-                    handle_set.insert(GeometryHandle { index, orientation: transform });
+                if let Some(handle_set) = self.side_wall_profile_to_geom_handle.get_mut(&key) {
+                    handle_set.insert(GeometryHandle {
+                        index,
+                        orientation: transform,
+                    });
                 }
             }
         }
@@ -92,17 +98,35 @@ impl GeometryStorage {
         self.profiles.push(profile);
     }
 
-    pub fn get_vertical_matching(&self, side_count: usize, bottom: usize, top: usize) -> GeometryHandleSet {
-        if let Some(set) = self.vertical_indicator_to_geom_handle.get(&GeometryStorageVerticalKey::new(side_count, bottom, top)) {
+    pub fn get_vertical_matching(
+        &self,
+        side_count: usize,
+        bottom: usize,
+        top: usize,
+    ) -> GeometryHandleSet {
+        if let Some(set) = self
+            .vertical_indicator_to_geom_handle
+            .get(&GeometryStorageVerticalKey::new(side_count, bottom, top))
+        {
             set.clone()
         } else {
             GeometryHandleSet::new(side_count)
         }
     }
 
-    pub fn get_wall_union(&self, side_count: usize, side: usize, wall_bits: usize) -> GeometryHandleSet {
+    pub fn get_wall_union(
+        &self,
+        side_count: usize,
+        side: usize,
+        wall_bits: usize,
+    ) -> GeometryHandleSet {
         GeometryHandleSet::union(
-            WallProfile::from_bits(wall_bits).iter().filter_map(|profile| self.side_wall_profile_to_geom_handle.get(&GeometryStorageWallKey::new(side_count, side, *profile)))
+            WallProfile::from_bits(wall_bits)
+                .iter()
+                .filter_map(|profile| {
+                    self.side_wall_profile_to_geom_handle
+                        .get(&GeometryStorageWallKey::new(side_count, side, *profile))
+                }),
         )
     }
 
@@ -141,6 +165,14 @@ pub fn load_geometry(mut geom_storage: ResMut<GeometryStorage>, asset_server: Re
         .unwrap(),
         None,
     );
+
+    for wall in WallProfile::from_bits(usize::MAX) {
+        for side in 0..4 {
+            let handles = geom_storage.get_wall_union(4, side, wall.to_bits());
+            info!("Handles for {} at side {}", wall.label(), side);
+            info!("{}", handles.data_string());
+        }
+    }
 }
 
 fn get_rect_profiles() -> Vec<SocketProfile> {
@@ -161,67 +193,67 @@ fn get_rect_profiles() -> Vec<SocketProfile> {
         )
         .unwrap(),
         // Ramps
-        // SocketProfile::new(
-        //     "ffss".to_string(),
-        //     vec![Bottom, Ramp, Top, Pmar],
-        //     "eeff".to_string(),
-        // )
-        // .unwrap()
-        // .with_transforms(vec![
-        //     Standard { rotations: 0 },
-        //     Standard { rotations: 1 },
-        //     Standard { rotations: 2 },
-        //     Standard { rotations: 3 },
-        // ]),
-        // SocketProfile::new(
-        //     "fffs".to_string(),
-        //     vec![Bottom, Bottom, Wall, Pmar],
-        //     "eeef".to_string(),
-        // )
-        // .unwrap()
-        // .with_transforms(vec![
-        //     Standard { rotations: 0 },
-        //     Standard { rotations: 1 },
-        //     Standard { rotations: 2 },
-        //     Standard { rotations: 3 },
-        //     Flipped { rotations: 0 },
-        //     Flipped { rotations: 1 },
-        //     Flipped { rotations: 2 },
-        //     Flipped { rotations: 3 },
-        // ]),
-        // SocketProfile::new(
-        //     "fees".to_string(),
-        //     vec![Bottom, Empty, Wall, Pmar],
-        //     "eeef".to_string(),
-        // )
-        // .unwrap()
-        // .with_transforms(vec![
-        //     Standard { rotations: 0 },
-        //     Standard { rotations: 1 },
-        //     Standard { rotations: 2 },
-        //     Standard { rotations: 3 },
-        //     Flipped { rotations: 0 },
-        //     Flipped { rotations: 1 },
-        //     Flipped { rotations: 2 },
-        //     Flipped { rotations: 3 },
-        // ]),
-        // SocketProfile::new(
-        //     "fees".to_string(),
-        //     vec![Bottom, Empty, Top, Pmar],
-        //     "eeef".to_string(),
-        // )
-        // .unwrap()
-        // .with_transforms(vec![
-        //     Standard { rotations: 0 },
-        //     Standard { rotations: 1 },
-        //     Standard { rotations: 2 },
-        //     Standard { rotations: 3 },
-        //     Flipped { rotations: 0 },
-        //     Flipped { rotations: 1 },
-        //     Flipped { rotations: 2 },
-        //     Flipped { rotations: 3 },
-        // ]),
-        // Corner Pillars
+        SocketProfile::new(
+            "ffss".to_string(),
+            vec![Bottom, Ramp, Top, Pmar],
+            "eeff".to_string(),
+        )
+        .unwrap()
+        .with_transforms(vec![
+            Standard { rotations: 0 },
+            Standard { rotations: 1 },
+            Standard { rotations: 2 },
+            Standard { rotations: 3 },
+        ]),
+        SocketProfile::new(
+            "fffs".to_string(),
+            vec![Bottom, Bottom, Wall, Pmar],
+            "eeef".to_string(),
+        )
+        .unwrap()
+        .with_transforms(vec![
+            Standard { rotations: 0 },
+            Standard { rotations: 1 },
+            Standard { rotations: 2 },
+            Standard { rotations: 3 },
+            Flipped { rotations: 0 },
+            Flipped { rotations: 1 },
+            Flipped { rotations: 2 },
+            Flipped { rotations: 3 },
+        ]),
+        SocketProfile::new(
+            "fees".to_string(),
+            vec![Bottom, Empty, Wall, Pmar],
+            "eeef".to_string(),
+        )
+        .unwrap()
+        .with_transforms(vec![
+            Standard { rotations: 0 },
+            Standard { rotations: 1 },
+            Standard { rotations: 2 },
+            Standard { rotations: 3 },
+            Flipped { rotations: 0 },
+            Flipped { rotations: 1 },
+            Flipped { rotations: 2 },
+            Flipped { rotations: 3 },
+        ]),
+        SocketProfile::new(
+            "fees".to_string(),
+            vec![Bottom, Empty, Top, Pmar],
+            "eeef".to_string(),
+        )
+        .unwrap()
+        .with_transforms(vec![
+            Standard { rotations: 0 },
+            Standard { rotations: 1 },
+            Standard { rotations: 2 },
+            Standard { rotations: 3 },
+            Flipped { rotations: 0 },
+            Flipped { rotations: 1 },
+            Flipped { rotations: 2 },
+            Flipped { rotations: 3 },
+        ]),
+        // // Corner Pillars
         SocketProfile::new(
             "fffs".to_string(),
             vec![Bottom, Bottom, Wall, Llaw],

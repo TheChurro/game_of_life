@@ -1,5 +1,4 @@
-use super::{VerticalProfile, WallProfile, orientations::GeomOrientation};
-
+use super::{orientations::GeomOrientation, VerticalProfile, WallProfile};
 
 pub struct SocketProfile {
     pub bottom: Vec<VerticalProfile>,
@@ -62,12 +61,15 @@ impl SocketProfile {
     }
 
     pub fn get_wall(&self, side: usize, transform: GeomOrientation) -> WallProfile {
-        self.walls[transform.get_index_in_sequence(side, self.walls.len())]
+        let wall = self.walls[transform.get_index_in_sequence(side, self.walls.len(), false)];
+        if transform.is_reversed() {
+            wall.reverse()
+        } else {
+            wall
+        }
     }
 
-    pub fn get_vertical_indicator_transform_triples(
-        &self,
-    ) -> Vec<(usize, usize, GeomOrientation)> {
+    pub fn get_vertical_indicator_transform_triples(&self) -> Vec<(usize, usize, GeomOrientation)> {
         self.transforms
             .iter()
             .map(|transform| {
@@ -86,7 +88,8 @@ impl SocketProfile {
     ) -> Vec<(WallProfile, GeomOrientation)> {
         let mut out = Vec::new();
         for transform in &self.transforms {
-            let profile = self.walls[transform.get_index_in_sequence(index, self.walls.len())];
+            let profile =
+                self.walls[transform.get_index_in_sequence(index, self.walls.len(), false)];
             out.push((
                 if transform.is_reversed() {
                     profile.reverse()

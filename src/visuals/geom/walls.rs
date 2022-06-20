@@ -1,4 +1,3 @@
-
 #[derive(Clone, Copy, PartialEq, Eq, Hash)]
 pub enum WallProfile {
     Empty,
@@ -37,7 +36,11 @@ impl WallProfile {
 
     pub fn compatible_across(self) -> usize {
         match self {
-            WallProfile::Empty => WallProfile::Empty.to_bits() | WallProfile::Bottom.to_bits() | WallProfile::Top.to_bits(),
+            WallProfile::Empty => {
+                WallProfile::Empty.to_bits()
+                    | WallProfile::Bottom.to_bits()
+                    | WallProfile::Top.to_bits()
+            }
             WallProfile::Ramp => WallProfile::Pmar.to_bits(),
             WallProfile::Pmar => WallProfile::Ramp.to_bits(),
             WallProfile::Wall => WallProfile::Llaw.to_bits(),
@@ -59,10 +62,6 @@ impl WallProfile {
         }
     }
 
-    // pub fn can_connect_below_to(self, other: WallProfile) -> bool {
-    //     self == WallProfile::Bottom && other == WallProfile::Top
-    // }
-
     pub fn label(self) -> &'static str {
         match self {
             WallProfile::Empty => "empty",
@@ -78,18 +77,30 @@ impl WallProfile {
     #[allow(unused)]
     pub const fn to_bits(self) -> usize {
         match self {
-            WallProfile::Empty =>  0x01,
-            WallProfile::Ramp =>   0x02,
-            WallProfile::Pmar =>   0x04,
-            WallProfile::Wall =>   0x08,
-            WallProfile::Llaw =>   0x10,
-            WallProfile::Bottom => 0x11,
-            WallProfile::Top =>    0x12,
+            WallProfile::Empty => 0x01,
+            WallProfile::Ramp => 0x02,
+            WallProfile::Pmar => 0x04,
+            WallProfile::Wall => 0x08,
+            WallProfile::Llaw => 0x10,
+            WallProfile::Bottom => 0x20,
+            WallProfile::Top => 0x40,
         }
     }
 
     #[allow(unused)]
     pub fn from_bits(value: usize) -> Vec<WallProfile> {
-        [WallProfile::Empty, WallProfile::Ramp, WallProfile::Pmar, WallProfile::Wall, WallProfile::Wall, WallProfile::Bottom, WallProfile::Top].iter().filter(|profile| profile.to_bits() & value != 0).cloned().collect()
+        [
+            WallProfile::Empty,
+            WallProfile::Ramp,
+            WallProfile::Pmar,
+            WallProfile::Wall,
+            WallProfile::Llaw,
+            WallProfile::Bottom,
+            WallProfile::Top,
+        ]
+        .iter()
+        .filter(|profile| (profile.to_bits() & value) != 0)
+        .cloned()
+        .collect()
     }
 }
