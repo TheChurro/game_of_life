@@ -47,6 +47,7 @@ mod simulation;
 mod tiling;
 mod ui;
 mod visuals;
+mod hashmap_ext;
 
 #[derive(Component)]
 struct VisualState {
@@ -570,7 +571,6 @@ fn main() {
         max_index: IVec2::new(50, 50),
         offset: Vec2::ZERO,
     };
-    let dual = tiling.get_dual();
     app.add_plugins(DefaultPlugins);
     app.add_plugin(bevy_obj::ObjPlugin);
     app.add_plugin(
@@ -605,12 +605,7 @@ fn main() {
         add_debug: false,
         hide: true,
     })
-    .insert_resource(CollapseState {
-        position_to_entry: Default::default(),
-        dual_tiling: dual,
-        collapsed_indicies: Default::default(),
-        material: Default::default(),
-    })
+    .insert_resource(CollapseState::default())
     .add_event::<SimulationStateChanged>()
     .insert_resource(visuals::geom::GeometryStorage::new())
     .add_startup_system(setup_world.after(menus::setup_menus))

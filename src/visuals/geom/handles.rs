@@ -26,44 +26,30 @@ impl GeometryHandleSet {
         Self { entries: Vec::new(), max_rotations }
     }
 
-    fn get_location_for_index(&self, index: usize) -> usize {
-        let mut range_min = 0;
-        let mut range_max = self.entries.len();
-        while range_min < range_max {
-            let at = (range_max + range_min) / 2;
-            match index.cmp(&self.entries[at].index) {
-                std::cmp::Ordering::Less => {
-                    range_max = at;
-                },
-                std::cmp::Ordering::Equal => {
-                    return at;
-                },
-                std::cmp::Ordering::Greater => {
-                    range_min = at + 1;
-                },
-            }
-        }
-        range_min
+    pub fn get_max_rotations(&self) -> usize {
+        self.max_rotations
     }
 
     pub fn insert(&mut self, handle: GeometryHandle) {
-        let location = self.get_location_for_index(handle.index);
-        if location < self.entries.len() && self.entries[location].index == handle.index {
-            self.entries[location].orientations |= handle.orientation.to_bits();
-        } else {
-            self.entries.insert(location, GeometryHandleSetEntry {
-                index: handle.index,
-                orientations: handle.orientation.to_bits()
-            });
+        match self.entries.binary_search_by(|entry| entry.index.cmp(&handle.index)) {
+            Ok(entry_index) => {
+                self.entries[entry_index].orientations |= handle.orientation.to_bits();
+            },
+            Err(insert_index) => {
+                self.entries.insert(insert_index, GeometryHandleSetEntry {
+                    index: handle.index,
+                    orientations: handle.orientation.to_bits()
+                })
+            }
         }
     }
 
     pub fn contains(&self, handle: GeometryHandle) -> bool {
-        let location = self.get_location_for_index(handle.index);
-        if location < self.entries.len() && self.entries[location].index == handle.index {
-            self.entries[location].orientations & handle.orientation.to_bits() != 0
-        } else {
-            false
+        match self.entries.binary_search_by(|entry| entry.index.cmp(&handle.index)) {
+            Ok(entry_index) => {
+                self.entries[entry_index].orientations & handle.orientation.to_bits() != 0
+            }
+            Err(_) => false
         }
     }
 
@@ -243,7 +229,7 @@ impl<'a> Iterator for GeometryHandleSetIterator<'a> {
 
             while self.orientation < 2 * self.set.max_rotations {
                 self.orientation += 1;
-                if self.set.entries[self.location].orientations & (1 << (usize::MAX - self.orientation + self.set.max_rotations )) != 0 {
+                if self.set.entries[self.location].orientations & (1 >> (usize::BITS as usize - self.orientation + self.set.max_rotations )) != 0 {
                     return Some(GeometryHandle {
                         index: self.set.entries[self.location].index,
                         orientation: GeomOrientation::Flipped { rotations: self.orientation - 1 - self.set.max_rotations }

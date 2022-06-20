@@ -105,6 +105,18 @@ impl GeometryStorage {
             WallProfile::from_bits(wall_bits).iter().filter_map(|profile| self.side_wall_profile_to_geom_handle.get(&GeometryStorageWallKey::new(side_count, side, *profile)))
         )
     }
+
+    pub fn get_walls_in_set(&self, set: &GeometryHandleSet) -> Vec<usize> {
+        let mut walls = vec![0; set.get_max_rotations()];
+        for handle in set {
+            if let Some(profile) = self.profiles.get(handle.index) {
+                for side in 0..walls.len() {
+                    walls[side] |= profile.get_wall(side, handle.orientation).to_bits();
+                }
+            }
+        }
+        walls
+    }
 }
 
 pub fn load_geometry(mut geom_storage: ResMut<GeometryStorage>, asset_server: Res<AssetServer>) {

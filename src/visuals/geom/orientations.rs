@@ -25,7 +25,7 @@ impl GeomOrientation {
     pub const fn to_bits(self) -> usize {
         match self {
             GeomOrientation::Standard { rotations } => 1 << rotations,
-            GeomOrientation::Flipped { rotations } => 1 << (usize::BITS as usize - 1 - rotations),
+            GeomOrientation::Flipped { rotations } => 1 >> (usize::BITS as usize - 1 - rotations),
         }
     }
 

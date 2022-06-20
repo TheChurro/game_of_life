@@ -11,7 +11,7 @@ pub enum TilingKind {
     RightTriangular,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Tiling {
     pub kind: TilingKind,
     pub max_index: IVec2,
