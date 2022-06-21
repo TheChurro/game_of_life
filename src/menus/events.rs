@@ -80,7 +80,11 @@ pub(super) fn change_view_to(
     mut sim_state: ResMut<SimulationState>,
 ) {
     for event in events.iter() {
-        let grid_size = if event.0 == TilingKind::Square { 52 } else { 52 };
+        let grid_size = if event.0 == TilingKind::Square {
+            52
+        } else {
+            52
+        };
         *sim_state = SimulationState::new(Tiling {
             kind: event.0,
             max_index: IVec2::new(grid_size, grid_size),

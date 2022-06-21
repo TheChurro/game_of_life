@@ -1,3 +1,4 @@
+/// Code adapted from bevy_pbr crate to work with instanced materials.
 use crate::bevy::reflect::TypeUuid;
 use crate::bevy::render::render_resource::std140::AsStd140;
 use bevy::{
@@ -9,7 +10,7 @@ use bevy::{
     pbr::{
         GlobalLightMeta, GpuLights, LightMeta, MeshPipelineKey, MeshUniform, MeshViewBindGroup,
         NotShadowCaster, NotShadowReceiver, SetMeshBindGroup, SetShadowViewBindGroup, Shadow,
-        ShadowPipeline, StandardMaterial, ViewClusterBindings, ViewShadowBindings,
+        ShadowPipeline, ViewClusterBindings, ViewShadowBindings,
         CLUSTERED_FORWARD_STORAGE_BUFFER_COUNT,
     },
     prelude::{
@@ -33,6 +34,8 @@ use bevy::{
     utils::HashMap,
 };
 use bytemuck::Pod;
+
+use super::instanced_pbr::InstancedStandardMaterial;
 
 #[derive(Default)]
 pub struct InstanceMeshRenderPlugin;
@@ -117,7 +120,7 @@ pub fn extract_meshes(
             &ComputedVisibility,
             &GlobalTransform,
             &MeshInstance,
-            &Handle<StandardMaterial>,
+            &Handle<InstancedStandardMaterial>,
             Option<&NotShadowReceiver>,
         ),
         Without<NotShadowCaster>,
@@ -133,7 +136,7 @@ pub fn extract_meshes(
     >,
 ) {
     let mut caster_map =
-        HashMap::<(Handle<Mesh>, Handle<StandardMaterial>), InstancedMeshTransforms>::with_capacity(
+        HashMap::<(Handle<Mesh>, Handle<InstancedStandardMaterial>), InstancedMeshTransforms>::with_capacity(
             *previous_caster_len,
         );
     for (computed_visibility, transform, instance, material, _) in caster_query.iter() {
@@ -284,6 +287,24 @@ pub struct InstancedMeshPipeline {
     // This dummy white texture is to be used in place of optional StandardMaterial textures
     pub dummy_white_gpu_image: GpuImage,
     pub clustered_forward_buffer_binding_type: BufferBindingType,
+}
+
+impl InstancedMeshPipeline {
+    pub fn get_image_texture<'a>(
+        &'a self,
+        gpu_images: &'a RenderAssets<Image>,
+        handle_option: &Option<Handle<Image>>,
+    ) -> Option<(&'a TextureView, &'a Sampler)> {
+        if let Some(handle) = handle_option {
+            let gpu_image = gpu_images.get(handle)?;
+            Some((&gpu_image.texture_view, &gpu_image.sampler))
+        } else {
+            Some((
+                &self.dummy_white_gpu_image.texture_view,
+                &self.dummy_white_gpu_image.sampler,
+            ))
+        }
+    }
 }
 
 const MAX_JOINTS: usize = 256;

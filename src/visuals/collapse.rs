@@ -3,7 +3,6 @@ use std::fmt::Display;
 use bevy::{
     hierarchy::DespawnRecursiveExt,
     math::{IVec2, Quat, Vec2, Vec3, Vec3Swizzles},
-    pbr::StandardMaterial,
     prelude::{
         info, Assets, Color, Commands, Component, Entity, EventReader, Handle, Mut, Query, Res,
         ResMut, Transform,
@@ -22,7 +21,7 @@ use super::{
         handles::GeometryHandleSet, GeomOrientation, GeometryHandle, GeometryStorage,
         VerticalProfile, WallProfile,
     },
-    render::{instanced_mesh::MeshInstance, InstancedPbrBundle},
+    render::{instanced_mesh::MeshInstance, InstancedPbrBundle, instanced_pbr::InstancedStandardMaterial},
 };
 
 #[derive(Component)]
@@ -39,7 +38,7 @@ pub struct CollapseState {
     pub dual_tiling: Tiling,
     base_tiling: Tiling,
     collapsed_indicies: HashSet<(u32, IVec2)>,
-    material: Handle<StandardMaterial>,
+    material: Handle<InstancedStandardMaterial>,
 
     height_updates: HashMap<IVec2, Vec<(IVec2, u32)>>,
     neighbor_restriction_updates: HashMap<CollapseEntryIndex, Vec<CollapseNeighborUpdate>>,
@@ -600,6 +599,7 @@ impl CollapseEntry {
         // against our neighbors selecting their final meshes, causing us to recognize that and selecting
         // our final mesh and sending them updates, etc.
         if has_some_updates {
+            self.current_mesh = None;
             self.recompute_from_restrictions(
                 log_total_restrictions,
                 false,
@@ -616,7 +616,7 @@ impl CollapseEntry {
 pub fn rebuild_visuals(
     mut collapse_state: ResMut<CollapseState>,
     mut events: EventReader<SimulationStateChanged>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    mut materials: ResMut<Assets<InstancedStandardMaterial>>,
     sim_state: Res<SimulationState>,
     geom_data: Res<GeometryStorage>,
     mut commands: Commands,
@@ -630,7 +630,7 @@ pub fn rebuild_visuals(
                 }
 
                 collapse_state.position_to_entry.clear();
-                collapse_state.max_height = 1;//sim_state.num_states as u32;
+                collapse_state.max_height = 1; //sim_state.num_states as u32;
                 collapse_state.base_tiling = sim_state.tiling.clone();
                 collapse_state.dual_tiling = sim_state.tiling.get_dual();
                 collapse_state.collapsed_indicies = HashSet::new();
@@ -643,10 +643,10 @@ pub fn rebuild_visuals(
                 }
 
                 if collapse_state.material == Default::default() {
-                    collapse_state.material = materials.add(StandardMaterial {
+                    collapse_state.material = materials.add(InstancedStandardMaterial {
                         base_color: Color::INDIGO,
                         perceptual_roughness: 1.0,
-                        double_sided: true,
+                        double_sided: false,
                         cull_mode: None,
                         ..Default::default()
                     });

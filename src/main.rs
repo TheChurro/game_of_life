@@ -35,7 +35,7 @@ use visuals::{
         SimulationStateChanged,
     },
     render::{
-        instanced_mesh::InstanceMeshRenderPlugin, instanced_mesh_material::InstancedMaterialPlugin,
+        instanced_mesh::InstanceMeshRenderPlugin, instanced_mesh_material::InstancedMaterialPlugin, instanced_pbr::InstancedStandardMaterial,
     },
 };
 
@@ -610,7 +610,7 @@ fn main() {
     );
     app.add_plugin(menus::MenusPlugin);
     app.add_plugin(InstanceMeshRenderPlugin);
-    app.add_plugin(InstancedMaterialPlugin::<StandardMaterial>::default());
+    app.add_plugin(InstancedMaterialPlugin::<InstancedStandardMaterial>::default());
     app.insert_resource(VisualsCache {
         meshes: Default::default(),
         states: Default::default(),

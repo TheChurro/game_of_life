@@ -1,29 +1,29 @@
-use std::marker::PhantomData;
+/// Code adapted from bevy_pbr crate to work with instanced materials.
+use std::{hash::Hash, marker::PhantomData};
 
 use bevy::{
+    asset::Asset,
     core_pipeline::{AlphaMask3d, Opaque3d, Transparent3d},
     ecs::system::{
         lifetimeless::{Read, SQuery, SRes},
         SystemParamItem,
     },
-    pbr::{
-        AlphaMode, MeshPipelineKey, SetMeshBindGroup, SetMeshViewBindGroup, SpecializedMaterial,
-    },
+    pbr::{AlphaMode, MeshPipelineKey, SetMeshBindGroup, SetMeshViewBindGroup},
     prelude::{
         error, AddAsset, App, AssetServer, Entity, FromWorld, Handle, Mesh, Msaa, Plugin, Query,
         Res, ResMut, Shader, With, World,
     },
     render::{
         mesh::MeshVertexBufferLayout,
-        render_asset::{RenderAssetPlugin, RenderAssets},
+        render_asset::{RenderAsset, RenderAssetPlugin, RenderAssets},
         render_component::ExtractComponentPlugin,
         render_phase::{
             AddRenderCommand, DrawFunctions, EntityRenderCommand, RenderCommandResult, RenderPhase,
             SetItemPipeline, TrackedRenderPass,
         },
         render_resource::{
-            BindGroupLayout, PipelineCache, RenderPipelineDescriptor, SpecializedMeshPipeline,
-            SpecializedMeshPipelineError, SpecializedMeshPipelines,
+            BindGroup, BindGroupLayout, PipelineCache, RenderPipelineDescriptor,
+            SpecializedMeshPipeline, SpecializedMeshPipelineError, SpecializedMeshPipelines,
         },
         renderer::RenderDevice,
         view::{ExtractedView, VisibleEntities},
@@ -33,29 +33,178 @@ use bevy::{
 
 use super::instanced_mesh::{DrawInstancedMesh, InstancedMeshPipeline, InstancedMeshTransforms};
 
-/// Adds the necessary ECS resources and render logic to enable rendering entities using the given [`SpecializedMaterial`]
+/// Adds the necessary ECS resources and render logic to enable rendering entities using the given [`InstancedSpecializedMaterial`]
 /// asset type (which includes [`Material`] types).
-pub struct InstancedMaterialPlugin<M: SpecializedMaterial>(bool, PhantomData<M>);
+pub struct InstancedMaterialPlugin<M: InstancedSpecializedMaterial>(PhantomData<M>);
 
-impl<M: SpecializedMaterial> Default for InstancedMaterialPlugin<M> {
+impl<M: InstancedSpecializedMaterial> Default for InstancedMaterialPlugin<M> {
     fn default() -> Self {
-        Self(false, Default::default())
+        Self(Default::default())
     }
 }
 
-// impl<M: SpecializedMaterial> InstancedMaterialPlugin<M> {
-//     pub fn register_material() -> Self {
-//         Self(true, Default::default())
-//     }
-// }
+/// Materials are used alongside [`MaterialPlugin`] and [`MaterialMeshBundle`](crate::MaterialMeshBundle)
+/// to spawn entities that are rendered with a specific [`Material`] type. They serve as an easy to use high level
+/// way to render [`Mesh`] entities with custom shader logic. For materials that can specialize their [`RenderPipelineDescriptor`]
+/// based on specific material values, see [`InstancedSpecializedMaterial`]. [`Material`] automatically implements [`InstancedSpecializedMaterial`]
+/// and can be used anywhere that type is used (such as [`MaterialPlugin`]).
+pub trait InstancedMaterial: Asset + RenderAsset + Sized {
+    /// Returns this material's [`BindGroup`]. This should match the layout returned by [`Material::bind_group_layout`].
+    fn bind_group(material: &<Self as RenderAsset>::PreparedAsset) -> &BindGroup;
 
-impl<M: SpecializedMaterial> Plugin for InstancedMaterialPlugin<M> {
+    /// Returns this material's [`BindGroupLayout`]. This should match the [`BindGroup`] returned by [`Material::bind_group`].
+    fn bind_group_layout(render_device: &RenderDevice) -> BindGroupLayout;
+
+    /// Returns this material's vertex shader. If [`None`] is returned, the default mesh vertex shader will be used.
+    /// Defaults to [`None`].
+    #[allow(unused_variables)]
+    fn vertex_shader(asset_server: &AssetServer) -> Option<Handle<Shader>> {
+        None
+    }
+
+    /// Returns this material's fragment shader. If [`None`] is returned, the default mesh fragment shader will be used.
+    /// Defaults to [`None`].
+    #[allow(unused_variables)]
+    fn fragment_shader(asset_server: &AssetServer) -> Option<Handle<Shader>> {
+        None
+    }
+
+    /// Returns this material's [`AlphaMode`]. Defaults to [`AlphaMode::Opaque`].
+    #[allow(unused_variables)]
+    fn alpha_mode(material: &<Self as RenderAsset>::PreparedAsset) -> AlphaMode {
+        AlphaMode::Opaque
+    }
+
+    /// The dynamic uniform indices to set for the given `material`'s [`BindGroup`].
+    /// Defaults to an empty array / no dynamic uniform indices.
+    #[allow(unused_variables)]
+    #[inline]
+    fn dynamic_uniform_indices(material: &<Self as RenderAsset>::PreparedAsset) -> &[u32] {
+        &[]
+    }
+
+    /// Customizes the default [`RenderPipelineDescriptor`].
+    #[allow(unused_variables)]
+    #[inline]
+    fn specialize(
+        pipeline: &InstancedMaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        layout: &MeshVertexBufferLayout,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        Ok(())
+    }
+}
+
+impl<M: InstancedMaterial> InstancedSpecializedMaterial for M {
+    type Key = ();
+
+    #[inline]
+    fn key(_material: &<Self as RenderAsset>::PreparedAsset) -> Self::Key {}
+
+    #[inline]
+    fn specialize(
+        pipeline: &InstancedMaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        _key: Self::Key,
+        layout: &MeshVertexBufferLayout,
+    ) -> Result<(), SpecializedMeshPipelineError> {
+        <M as InstancedMaterial>::specialize(pipeline, descriptor, layout)
+    }
+
+    #[inline]
+    fn bind_group(material: &<Self as RenderAsset>::PreparedAsset) -> &BindGroup {
+        <M as InstancedMaterial>::bind_group(material)
+    }
+
+    #[inline]
+    fn bind_group_layout(render_device: &RenderDevice) -> BindGroupLayout {
+        <M as InstancedMaterial>::bind_group_layout(render_device)
+    }
+
+    #[inline]
+    fn alpha_mode(material: &<Self as RenderAsset>::PreparedAsset) -> AlphaMode {
+        <M as InstancedMaterial>::alpha_mode(material)
+    }
+
+    #[inline]
+    fn vertex_shader(asset_server: &AssetServer) -> Option<Handle<Shader>> {
+        <M as InstancedMaterial>::vertex_shader(asset_server)
+    }
+
+    #[inline]
+    fn fragment_shader(asset_server: &AssetServer) -> Option<Handle<Shader>> {
+        <M as InstancedMaterial>::fragment_shader(asset_server)
+    }
+
+    #[allow(unused_variables)]
+    #[inline]
+    fn dynamic_uniform_indices(material: &<Self as RenderAsset>::PreparedAsset) -> &[u32] {
+        <M as InstancedMaterial>::dynamic_uniform_indices(material)
+    }
+}
+
+/// Materials are used alongside [`MaterialPlugin`] and [`MaterialMeshBundle`](crate::MaterialMeshBundle)
+/// to spawn entities that are rendered with a specific [`InstancedSpecializedMaterial`] type. They serve as an easy to use high level
+/// way to render [`Mesh`] entities with custom shader logic. [`InstancedSpecializedMaterial`](InstancedSpecializedMaterial) use their [`InstancedSpecializedMaterial::Key`]
+/// to customize their [`RenderPipelineDescriptor`] based on specific material values. The slightly simpler [`Material`] trait
+/// should be used for materials that do not need specialization. [`Material`] types automatically implement [`InstancedSpecializedMaterial`].
+pub trait InstancedSpecializedMaterial: Asset + RenderAsset + Sized {
+    /// The key used to specialize this material's [`RenderPipelineDescriptor`].
+    type Key: PartialEq + Eq + Hash + Clone + Send + Sync;
+
+    /// Extract the [`InstancedSpecializedMaterial::Key`] for the "prepared" version of this material. This key will be
+    /// passed in to the [`InstancedSpecializedMaterial::specialize`] function when compiling the [`RenderPipeline`](bevy_render::render_resource::RenderPipeline)
+    /// for a given entity's material.
+    fn key(material: &<Self as RenderAsset>::PreparedAsset) -> Self::Key;
+
+    /// Specializes the given `descriptor` according to the given `key`.
+    fn specialize(
+        pipeline: &InstancedMaterialPipeline<Self>,
+        descriptor: &mut RenderPipelineDescriptor,
+        key: Self::Key,
+        layout: &MeshVertexBufferLayout,
+    ) -> Result<(), SpecializedMeshPipelineError>;
+
+    /// Returns this material's [`BindGroup`]. This should match the layout returned by [`InstancedSpecializedMaterial::bind_group_layout`].
+    fn bind_group(material: &<Self as RenderAsset>::PreparedAsset) -> &BindGroup;
+
+    /// Returns this material's [`BindGroupLayout`]. This should match the [`BindGroup`] returned by [`InstancedSpecializedMaterial::bind_group`].
+    fn bind_group_layout(render_device: &RenderDevice) -> BindGroupLayout;
+
+    /// Returns this material's vertex shader. If [`None`] is returned, the default mesh vertex shader will be used.
+    /// Defaults to [`None`].
+    #[allow(unused_variables)]
+    fn vertex_shader(asset_server: &AssetServer) -> Option<Handle<Shader>> {
+        None
+    }
+
+    /// Returns this material's fragment shader. If [`None`] is returned, the default mesh fragment shader will be used.
+    /// Defaults to [`None`].
+    #[allow(unused_variables)]
+    fn fragment_shader(asset_server: &AssetServer) -> Option<Handle<Shader>> {
+        None
+    }
+
+    /// Returns this material's [`AlphaMode`]. Defaults to [`AlphaMode::Opaque`].
+    #[allow(unused_variables)]
+    fn alpha_mode(material: &<Self as RenderAsset>::PreparedAsset) -> AlphaMode {
+        AlphaMode::Opaque
+    }
+
+    /// The dynamic uniform indices to set for the given `material`'s [`BindGroup`].
+    /// Defaults to an empty array / no dynamic uniform indices.
+    #[allow(unused_variables)]
+    #[inline]
+    fn dynamic_uniform_indices(material: &<Self as RenderAsset>::PreparedAsset) -> &[u32] {
+        &[]
+    }
+}
+
+impl<M: InstancedSpecializedMaterial> Plugin for InstancedMaterialPlugin<M> {
     fn build(&self, app: &mut App) {
-        if self.0 {
-            app.add_asset::<M>()
-                .add_plugin(ExtractComponentPlugin::<Handle<M>>::default())
-                .add_plugin(RenderAssetPlugin::<M>::default());
-        }
+        app.add_asset::<M>()
+            .add_plugin(ExtractComponentPlugin::<Handle<M>>::default())
+            .add_plugin(RenderAssetPlugin::<M>::default());
         if let Ok(render_app) = app.get_sub_app_mut(RenderApp) {
             render_app
                 .add_render_command::<Transparent3d, DrawMaterial<M>>()
@@ -68,7 +217,7 @@ impl<M: SpecializedMaterial> Plugin for InstancedMaterialPlugin<M> {
     }
 }
 
-pub struct InstancedMaterialPipeline<M: SpecializedMaterial> {
+pub struct InstancedMaterialPipeline<M: InstancedSpecializedMaterial> {
     pub mesh_pipeline: InstancedMeshPipeline,
     pub material_layout: BindGroupLayout,
     pub vertex_shader: Option<Handle<Shader>>,
@@ -82,7 +231,7 @@ pub struct InstancedMaterialPipelineKey<T> {
     material_key: T,
 }
 
-impl<M: SpecializedMaterial> SpecializedMeshPipeline for InstancedMaterialPipeline<M> {
+impl<M: InstancedSpecializedMaterial> SpecializedMeshPipeline for InstancedMaterialPipeline<M> {
     type Key = InstancedMaterialPipelineKey<M::Key>;
 
     fn specialize(
@@ -104,12 +253,12 @@ impl<M: SpecializedMaterial> SpecializedMeshPipeline for InstancedMaterialPipeli
         let descriptor_layout = descriptor.layout.as_mut().unwrap();
         descriptor_layout.insert(1, self.material_layout.clone());
 
-        // TODO: jchuray: M::specialize(self, &mut descriptor, key.material_key, layout)?;
+        M::specialize(self, &mut descriptor, key.material_key, layout)?;
         Ok(descriptor)
     }
 }
 
-impl<M: SpecializedMaterial> FromWorld for InstancedMaterialPipeline<M> {
+impl<M: InstancedSpecializedMaterial> FromWorld for InstancedMaterialPipeline<M> {
     fn from_world(world: &mut World) -> Self {
         let asset_server = world.resource::<AssetServer>();
         let render_device = world.resource::<RenderDevice>();
@@ -133,8 +282,10 @@ type DrawMaterial<M> = (
     DrawInstancedMesh,
 );
 
-pub struct SetInstancedMaterialBindGroup<M: SpecializedMaterial, const I: usize>(PhantomData<M>);
-impl<M: SpecializedMaterial, const I: usize> EntityRenderCommand
+pub struct SetInstancedMaterialBindGroup<M: InstancedSpecializedMaterial, const I: usize>(
+    PhantomData<M>,
+);
+impl<M: InstancedSpecializedMaterial, const I: usize> EntityRenderCommand
     for SetInstancedMaterialBindGroup<M, I>
 {
     type Param = (SRes<RenderAssets<M>>, SQuery<Read<Handle<M>>>);
@@ -156,7 +307,7 @@ impl<M: SpecializedMaterial, const I: usize> EntityRenderCommand
 }
 
 #[allow(clippy::too_many_arguments)]
-fn queue_instanced_material_meshes<M: SpecializedMaterial>(
+fn queue_instanced_material_meshes<M: InstancedSpecializedMaterial>(
     opaque_draw_functions: Res<DrawFunctions<Opaque3d>>,
     alpha_mask_draw_functions: Res<DrawFunctions<AlphaMask3d>>,
     transparent_draw_functions: Res<DrawFunctions<Transparent3d>>,
