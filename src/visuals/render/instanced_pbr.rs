@@ -6,7 +6,7 @@ use bevy::{
     ecs::system::{lifetimeless::SRes, SystemParamItem},
     math::Vec4,
     pbr::AlphaMode,
-    prelude::{AssetServer, Color, Handle, Image, Shader, info},
+    prelude::{AssetServer, Color, Handle, Image, Shader},
     reflect::TypeUuid,
     render::{
         mesh::MeshVertexBufferLayout,

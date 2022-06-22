@@ -1,5 +1,5 @@
 use bevy::{
-    prelude::{info, AssetServer, Handle, Mesh, Res, ResMut},
+    prelude::{AssetServer, Handle, Mesh, Res, ResMut},
     utils::HashMap,
 };
 
