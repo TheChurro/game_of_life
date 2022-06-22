@@ -165,14 +165,6 @@ pub fn load_geometry(mut geom_storage: ResMut<GeometryStorage>, asset_server: Re
         .unwrap(),
         None,
     );
-
-    for wall in WallProfile::from_bits(usize::MAX) {
-        for side in 0..4 {
-            let handles = geom_storage.get_wall_union(4, side, wall.to_bits());
-            info!("Handles for {} at side {}", wall.label(), side);
-            info!("{}", handles.data_string());
-        }
-    }
 }
 
 fn get_rect_profiles() -> Vec<SocketProfile> {

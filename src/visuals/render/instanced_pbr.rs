@@ -389,7 +389,6 @@ impl InstancedSpecializedMaterial for InstancedStandardMaterial {
         key: Self::Key,
         _layout: &MeshVertexBufferLayout,
     ) -> Result<(), SpecializedMeshPipelineError> {
-        info!("SPECIALIZED");
         if key.normal_map {
             descriptor
                 .fragment

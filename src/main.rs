@@ -5,7 +5,7 @@ use bevy::{
         Input,
     },
     math::{IVec2, Mat4, Quat, Vec2, Vec3},
-    pbr::{AmbientLight, DirectionalLight, DirectionalLightBundle, StandardMaterial},
+    pbr::{AmbientLight, DirectionalLight, DirectionalLightBundle},
     prelude::{
         App, AssetServer, Assets, Camera, Changed, Color, Commands, Component, CoreStage, Entity,
         EventReader, EventWriter, GlobalTransform, Handle, Image, KeyCode, Mesh, MouseButton,
