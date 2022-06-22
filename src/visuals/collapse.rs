@@ -722,7 +722,7 @@ pub fn collapse_visuals(
     for _ in 0..if collapse_state.stepping_mode {
         collapse_state.steps
     } else {
-        200
+        2000
     } {
         // Try to take one height update out of our list of height updates.
         let index = collapse_state.height_updates.keys().next().cloned();
