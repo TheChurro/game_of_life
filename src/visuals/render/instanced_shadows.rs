@@ -2,7 +2,6 @@
 
 // use super::instanced_mesh::{InstancedMeshTransforms, DrawShadowMesh};
 
-
 // #[allow(clippy::too_many_arguments)]
 // fn queue_shadows(
 //     shadow_draw_functions: Res<DrawFunctions<Shadow>>,

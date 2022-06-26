@@ -1,7 +1,7 @@
 use bevy::{
     math::{Size, Vec2},
     prelude::{Changed, Component, Query},
-    sprite::Sprite,
+    sprite::Sprite, text::Text2dBounds,
 };
 
 /// A component marking an entity as a UI Element.
@@ -88,5 +88,13 @@ pub fn update_sprite_to_match_layout(
 ) {
     query.for_each_mut(|(mut sprite, element)| {
         sprite.custom_size = Some(Vec2::new(element.size.width, element.size.height));
+    });
+}
+
+pub fn update_text_to_match_layout(
+    mut query: Query<(&mut Text2dBounds, &UiElement), Changed<UiElement>>,
+) {
+    query.for_each_mut(|(mut bounds, element)| {
+        bounds.size = element.size;
     });
 }

@@ -135,10 +135,10 @@ pub fn extract_meshes(
         With<NotShadowCaster>,
     >,
 ) {
-    let mut caster_map =
-        HashMap::<(Handle<Mesh>, Handle<InstancedStandardMaterial>), InstancedMeshTransforms>::with_capacity(
-            *previous_caster_len,
-        );
+    let mut caster_map = HashMap::<
+        (Handle<Mesh>, Handle<InstancedStandardMaterial>),
+        InstancedMeshTransforms,
+    >::with_capacity(*previous_caster_len);
     for (computed_visibility, transform, instance, material, _) in caster_query.iter() {
         if !computed_visibility.is_visible {
             continue;

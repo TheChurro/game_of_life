@@ -1,6 +1,6 @@
 use bevy::{
     math::Vec3,
-    prelude::{Added, Component, EventReader, Query, Res, Transform},
+    prelude::{Component, EventReader, Query, Res, Transform, Changed},
     window::{WindowResized, Windows},
 };
 
@@ -31,7 +31,7 @@ pub struct AnchoredUi {
 /// correctly within the window.
 pub fn position_on_added(
     windows: Res<Windows>,
-    mut transform_query: Query<(&mut Transform, &mut UiElement, &AnchoredUi), Added<AnchoredUi>>,
+    mut transform_query: Query<(&mut Transform, &mut UiElement, &AnchoredUi), Changed<AnchoredUi>>,
 ) {
     if let Some(window) = windows.get_primary() {
         transform_query.for_each_mut(|(mut transform, mut element, anchor)| {

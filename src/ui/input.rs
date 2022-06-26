@@ -117,8 +117,13 @@ pub struct ProcessedInputs {
 }
 
 impl InputState {
+    pub fn has_selection(&self) -> bool {
+        self.ui_element_selected.is_some()
+    }
+
     pub fn process_inputs(
         &mut self,
+        shift_down: bool,
         mouse_input: &Res<Input<MouseButton>>,
         mut mouse_movements: EventReader<MouseMotion>,
         mut mouse_wheel_movements: EventReader<MouseWheel>,
@@ -159,6 +164,7 @@ impl InputState {
         let mut clear_select = false;
         if let Some(entity) = self.ui_element_selected {
             clear_select = mouse_input.just_pressed(MouseButton::Left);
+            clear_select &= !shift_down;
             if let Ok((_, mut element, _)) = ui_element_query.get_mut(entity) {
                 element.selected_state.previous = element.selected_state.current;
                 element.selected_state.current = !clear_select;

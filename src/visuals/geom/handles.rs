@@ -20,6 +20,15 @@ impl Display for GeometryHandle {
     }
 }
 
+impl GeometryHandle {
+    pub fn pretty_string(value: Option<Self>) -> String {
+        match value {
+            Some(value) => format!("{}", value),
+            None => "[null]".to_string(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 struct GeometryHandleSetEntry {
     index: usize,

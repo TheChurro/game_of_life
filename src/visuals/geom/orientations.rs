@@ -1,7 +1,18 @@
+use bevy::{
+    math::{Quat, Vec3},
+    prelude::Transform,
+};
+
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum GeomOrientation {
     Standard { rotations: usize },
     Flipped { rotations: usize },
+}
+
+impl Default for GeomOrientation {
+    fn default() -> Self {
+        Self::Standard { rotations: 0 }
+    }
 }
 
 impl GeomOrientation {
@@ -20,7 +31,7 @@ impl GeomOrientation {
         }
     }
 
-    pub fn is_reversed(&self) -> bool {
+    pub const fn is_reversed(&self) -> bool {
         match self {
             GeomOrientation::Standard { .. } => false,
             GeomOrientation::Flipped { .. } => true,
@@ -51,5 +62,39 @@ impl GeomOrientation {
                 None
             }
         })
+    }
+
+    pub fn get_transform(&self, max_sides: usize) -> Transform {
+        match self {
+            GeomOrientation::Standard { rotations } => {
+                Transform::from_rotation(Quat::from_rotation_y(
+                    -std::f32::consts::TAU * *rotations as f32 / max_sides as f32,
+                ))
+            }
+            GeomOrientation::Flipped { rotations } => Transform::from_rotation(
+                Quat::from_rotation_y(std::f32::consts::TAU * *rotations as f32 / max_sides as f32),
+            )
+            .with_scale(Vec3::new(1.0, 1.0, -1.0)),
+        }
+    }
+
+    pub fn inverse(&self, max_sides: usize) -> GeomOrientation {
+        match self {
+            GeomOrientation::Standard { rotations } => GeomOrientation::Standard { rotations: (max_sides - rotations) % max_sides },
+            GeomOrientation::Flipped { rotations } => GeomOrientation::Flipped { rotations: (max_sides - rotations) % max_sides },
+        }
+    }
+
+    pub fn compose(&self, other: GeomOrientation, max_sides: usize) -> GeomOrientation {
+        match (self, other) {
+            (GeomOrientation::Standard { rotations: rot1 }, GeomOrientation::Standard { rotations: rot2 }) => 
+                GeomOrientation::Standard { rotations: (*rot1 + rot2) % max_sides },
+            (GeomOrientation::Standard { rotations: rot1 }, GeomOrientation::Flipped { rotations: rot2 }) => 
+                GeomOrientation::Flipped { rotations: (*rot1 + rot2) % max_sides },
+            (GeomOrientation::Flipped { rotations: rot1 }, GeomOrientation::Flipped { rotations: rot2 }) => 
+                GeomOrientation::Standard { rotations: (*rot1 + rot2) % max_sides },
+            (GeomOrientation::Flipped { rotations: rot1 }, GeomOrientation::Standard { rotations: rot2 }) => 
+                GeomOrientation::Flipped { rotations: (*rot1 + rot2) % max_sides },
+        }
     }
 }

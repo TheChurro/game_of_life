@@ -1,13 +1,11 @@
-use bevy::{
-    prelude::{Bundle, ComputedVisibility, GlobalTransform, Handle, Transform, Visibility},
-};
+use bevy::prelude::{Bundle, ComputedVisibility, GlobalTransform, Handle, Transform, Visibility};
 
 use self::{instanced_mesh::MeshInstance, instanced_mesh_material::InstancedSpecializedMaterial};
 
 pub mod instanced_mesh;
 pub mod instanced_mesh_material;
-pub mod instanced_shadows;
 pub mod instanced_pbr;
+pub mod instanced_shadows;
 
 #[derive(Bundle)]
 pub struct InstancedPbrBundle<M: InstancedSpecializedMaterial> {

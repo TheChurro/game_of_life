@@ -5,12 +5,15 @@ use bevy::{
         Input,
     },
     math::{IVec2, Mat4, Quat, Vec2, Vec3},
-    pbr::{AmbientLight, DirectionalLight, DirectionalLightBundle},
+    pbr::{
+        AmbientLight, DirectionalLight, DirectionalLightBundle,
+        StandardMaterial,
+    },
     prelude::{
-        App, AssetServer, Assets, Camera, Changed, Color, Commands, Component, CoreStage, Entity,
-        EventReader, EventWriter, GlobalTransform, Handle, Image, KeyCode, Mesh, MouseButton,
-        OrthographicCameraBundle, ParallelSystemDescriptorCoercion, PerspectiveCameraBundle, Query,
-        Res, ResMut, Transform, Visibility, With, Without,
+        App, AssetServer, Assets, Camera, Changed, Color, Commands, Component, CoreStage,
+        Entity, EventReader, EventWriter, GlobalTransform, Handle, Image, KeyCode, Mesh,
+        MouseButton, OrthographicCameraBundle, ParallelSystemDescriptorCoercion,
+        PerspectiveCameraBundle, Query, Res, ResMut, Transform, Visibility, With, Without,
     },
     render::{
         camera::Camera3d,
@@ -23,7 +26,7 @@ use bevy::{
     DefaultPlugins,
 };
 
-use menus::{Inspect, MenuState};
+use menus::{DebugTileEvent, MenuState};
 use simulation::SimulationState;
 use tiling::{
     EquilateralDirection, RightTriangleRotation, TileShape, Tiling, TilingKind,
@@ -31,11 +34,12 @@ use tiling::{
 };
 use visuals::{
     collapse::{
-        collapse_visuals, rebuild_visuals, CollapseEntryIndex, CollapseState,
+        collapse_visuals, rebuild_visuals, CollapseState,
         SimulationStateChanged,
     },
     render::{
-        instanced_mesh::InstanceMeshRenderPlugin, instanced_mesh_material::InstancedMaterialPlugin, instanced_pbr::InstancedStandardMaterial,
+        instanced_mesh::InstanceMeshRenderPlugin, instanced_mesh_material::InstancedMaterialPlugin,
+        instanced_pbr::InstancedStandardMaterial,
     },
 };
 
@@ -75,6 +79,8 @@ pub struct VisualsCache {
     states: HashMap<u32, Handle<ColorMaterial>>,
     outline_image: Handle<Image>,
     font: Handle<Font>,
+    debug_vis_material: Handle<StandardMaterial>,
+    debug_vis_outline_material: Handle<StandardMaterial>,
 }
 
 #[derive(Component)]
@@ -93,6 +99,7 @@ fn setup_world(
     mut meshes: ResMut<Assets<Mesh>>,
     asset_server: Res<AssetServer>,
     mut materials: ResMut<Assets<ColorMaterial>>,
+    mut standard_materials: ResMut<Assets<StandardMaterial>>,
     mut visuals_cache: ResMut<VisualsCache>,
     sim_state: Res<SimulationState>,
     vis_state: Res<VisualState>,
@@ -292,6 +299,16 @@ fn setup_world(
         }
     }
 
+    visuals_cache.debug_vis_material = standard_materials.add(StandardMaterial {
+        cull_mode: None,
+        ..Color::WHITE.into()
+    });
+    visuals_cache.debug_vis_outline_material = standard_materials.add(StandardMaterial {
+        cull_mode: None,
+        double_sided: true,
+        ..Color::BLACK.into()
+    });
+
     let mut camera = PerspectiveCameraBundle::new_3d();
     camera.transform =
         Transform::from_xyz(-20.0, 20.0, -20.0).looking_at(Vec3::new(25.0, 0.0, 25.0), Vec3::Y);
@@ -417,7 +434,7 @@ fn update_tile_visual(
 fn input_system(
     mut vis_state: ResMut<VisualState>,
     mut sim_state: ResMut<SimulationState>,
-    mut collapse_state: ResMut<CollapseState>,
+    collapse_state: ResMut<CollapseState>,
 
     keyboard: Res<Input<KeyCode>>,
     mut input_state: ResMut<ui::InputState>,
@@ -428,9 +445,11 @@ fn input_system(
     ui_roots_query: Query<Entity, (With<ui::UiElement>, Without<Parent>)>,
     ui_element_query: Query<(&Transform, &mut ui::UiElement, Option<&Children>)>,
     camera: Query<(&GlobalTransform, &Camera), With<Camera3d>>,
-    mut inspect_events: EventWriter<Inspect>,
+    mut inspect_events: EventWriter<DebugTileEvent>,
 ) {
+    let shift_down = keyboard.pressed(KeyCode::LShift) || keyboard.pressed(KeyCode::RShift);
     let processed_input = input_state.process_inputs(
+        shift_down,
         &mouse_input,
         mouse_movements,
         mouse_wheel_movements,
@@ -439,16 +458,10 @@ fn input_system(
         ui_element_query,
     );
 
-    if keyboard.just_pressed(KeyCode::H) && !vis_state.mouse_down {
-        vis_state.hide = !vis_state.hide;
-    }
-
-    if keyboard.just_pressed(KeyCode::P) {
-        collapse_state.stepping_mode = !collapse_state.stepping_mode;
-    }
-
-    if keyboard.just_pressed(KeyCode::S) {
-        collapse_state.steps += 1;
+    if !input_state.has_selection() {
+        if keyboard.just_pressed(KeyCode::H) && !vis_state.mouse_down {
+            vis_state.hide = !vis_state.hide;
+        }
     }
 
     if processed_input.over_some_ui {
@@ -489,7 +502,7 @@ fn input_system(
                         None
                     };
 
-                    if keyboard.pressed(KeyCode::LShift) {
+                    if shift_down {
                         if processed_input.movement.length_squared() > 0.01 || vis_state.mouse_moved
                         {
                             vis_state.mouse_moved = true;
@@ -514,18 +527,12 @@ fn input_system(
                         vis_state.mouse_down = false;
                         if !vis_state.mouse_moved {
                             if let Some(pos) = new_pos {
-                                if keyboard.pressed(KeyCode::LShift)
-                                    || keyboard.pressed(KeyCode::RShift)
+                                if shift_down
                                 {
                                     let tile = collapse_state
                                         .dual_tiling
                                         .get_tile_containing(Vec2::new(pos.x, pos.z));
-                                    if let Some(entity) = collapse_state
-                                        .position_to_entry
-                                        .get(&CollapseEntryIndex::new(tile.index, 0))
-                                    {
-                                        inspect_events.send(Inspect(*entity));
-                                    }
+                                    inspect_events.send(DebugTileEvent(tile.index));
                                 } else {
                                     let tile = sim_state
                                         .tiling
@@ -605,8 +612,9 @@ fn main() {
             .register_event::<menus::ChangeViewTo>()
             .register_event::<menus::ShowRulesFor>()
             .register_event::<menus::TogglePlay>()
-            .register_event::<menus::Inspect>()
-            .register_event_generator::<menus::RuleUpdateEventGenerator>(),
+            .register_event::<menus::DebugTileEvent>()
+            .register_number_event_generator::<menus::RuleUpdateEventGenerator>()
+            .register_text_event_generator::<menus::CommandEventGenerator>(),
     );
     app.add_plugin(menus::MenusPlugin);
     app.add_plugin(InstanceMeshRenderPlugin);
@@ -616,6 +624,8 @@ fn main() {
         states: Default::default(),
         outline_image: Default::default(),
         font: Handle::default(),
+        debug_vis_material: Handle::default(),
+        debug_vis_outline_material: Handle::default(),
     })
     .insert_resource(SimulationState::new(tiling))
     .insert_resource(VisualState {
@@ -628,7 +638,7 @@ fn main() {
         last_click_pos: None,
         visual_grid_count: IVec2::new(26, 26),
         scale: 50.0,
-        min_scale: 25.0,
+        min_scale: 5.0,
         max_scale: 100.0,
         add_debug: false,
         hide: true,
@@ -639,11 +649,13 @@ fn main() {
     .add_startup_system(setup_world.after(menus::setup_menus))
     .add_system_to_stage(CoreStage::PreUpdate, input_system)
     .add_startup_system(visuals::geom::load_geometry)
+    .add_system(visuals::geom::log_geometry)
     .add_system(update_tile)
     .add_system(update_tile_visual.after(update_tile))
     .add_system(process_simulation)
     .add_system(collapse_visuals)
     .add_system(rebuild_visuals)
     .add_system(move_camera)
+    .add_system(visuals::geom::geometry_input)
     .run()
 }

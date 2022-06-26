@@ -1,5 +1,4 @@
 /// Code adapted from bevy_pbr crate to work with instanced materials.
-
 use super::instanced_mesh_material::{InstancedMaterialPipeline, InstancedSpecializedMaterial};
 
 use bevy::{
@@ -12,11 +11,12 @@ use bevy::{
         mesh::MeshVertexBufferLayout,
         render_asset::{PrepareAssetError, RenderAsset, RenderAssets},
         render_resource::{
-            std140::{Std140, AsStd140}, BindGroup, BindGroupDescriptor, BindGroupEntry,
-            BindGroupLayoutDescriptor, BindGroupLayoutEntry, BindingResource, BindingType, Buffer,
-            BufferBindingType, BufferInitDescriptor, BufferSize, BufferUsages, Face,
-            RenderPipelineDescriptor, SamplerBindingType, ShaderStages,
-            SpecializedMeshPipelineError, TextureFormat, TextureSampleType, TextureViewDimension,
+            std140::{AsStd140, Std140},
+            BindGroup, BindGroupDescriptor, BindGroupEntry, BindGroupLayoutDescriptor,
+            BindGroupLayoutEntry, BindingResource, BindingType, Buffer, BufferBindingType,
+            BufferInitDescriptor, BufferSize, BufferUsages, Face, RenderPipelineDescriptor,
+            SamplerBindingType, ShaderStages, SpecializedMeshPipelineError, TextureFormat,
+            TextureSampleType, TextureViewDimension,
         },
         renderer::RenderDevice,
     },

@@ -3,17 +3,17 @@ use bevy::{
     hierarchy::{BuildChildren, ChildBuilder},
     math::{Size, Vec3},
     prelude::{
-        AssetServer, Color, Commands, Component, EventWriter, Handle, Image, Res, ResMut, Transform,
+        AssetServer, Color, Commands, Component, EventWriter, Handle, Image, Res, ResMut, Transform, Bundle,
     },
     sprite::{Sprite, SpriteBundle},
-    text::{Font, HorizontalAlign, Text, Text2dBundle, TextAlignment, TextSection, TextStyle},
+    text::{Font, HorizontalAlign, Text, Text2dBundle, TextAlignment, TextSection, TextStyle, Text2dBounds},
     transform::TransformBundle,
     utils::HashMap,
 };
 
 use crate::{tiling::*, ui::*};
 
-use super::{events::*, tile_inspect::TileInspector, RulesContainer};
+use super::{events::*, tile_inspect::DebugRoot, RulesContainer, REGULAR_FONT_SIZE, REGULAR_HEIGHT_STEP, CommandEventGenerator};
 
 pub struct MenuState {
     pub button: Handle<Image>,
@@ -33,6 +33,13 @@ impl Default for MenuState {
             state_to_color: Default::default(),
         }
     }
+}
+
+#[derive(Bundle)]
+pub struct Text2dUiBundle {
+    #[bundle]
+    pub text: Text2dBundle,
+    pub element: UiElement,
 }
 
 impl MenuState {
@@ -56,6 +63,31 @@ impl MenuState {
             },
             transform: Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
             ..Default::default()
+        }
+    }
+
+    pub fn get_ui_text_bundle(&self, text: String, size: f32, width: f32, height: f32, color: Color) -> Text2dUiBundle {
+        Text2dUiBundle {
+            text: Text2dBundle {
+                text: Text {
+                    sections: vec![TextSection {
+                        value: text,
+                        style: TextStyle {
+                            font: self.font.clone(),
+                            font_size: size,
+                            color,
+                        },
+                    }],
+                    alignment: TextAlignment {
+                        vertical: bevy::text::VerticalAlign::Center,
+                        horizontal: bevy::text::HorizontalAlign::Center,
+                    },
+                },
+                text_2d_bounds: Text2dBounds { size: Size::new(width, height ) },
+                transform: Transform::from_translation(Vec3::new(0.0, 0.0, 1.0)),
+                ..Default::default()
+            },
+            element: UiElement { size: Size::new(width, height), ..Default::default() }
         }
     }
 
@@ -296,6 +328,29 @@ pub fn setup_menus(
     );
     play_step.insert(Transform::from_translation(Vec3::new(0.0, 0.0, 10.0))); // Move it up.
 
+    let scroll_id = commands.spawn_bundle(TransformBundle::default()).insert(UiElement {
+        size: Size::new(300.0, 400.0),
+        scroll_state: UiStateDetails {
+            accepts_state: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    }).insert(UiLinearScroll::default()).id();
+
+    let input_id = commands.spawn_bundle(menu_data.get_text_bundle("help (click + enter)".to_string(), REGULAR_FONT_SIZE, Color::BLACK))
+    .insert(UiElement {
+        size: Size::new(300.0, REGULAR_HEIGHT_STEP),
+        selected_state: UiStateDetails {
+            accepts_state: true,
+            ..Default::default()
+        },
+        ..Default::default()
+    })
+    .insert(TextField {
+        event_generator: CommandEventGenerator,
+        current_value: "help (click + enter)".to_string(),
+    }).id();
+
     commands
         .spawn()
         .insert_bundle(SpriteBundle {
@@ -308,20 +363,20 @@ pub fn setup_menus(
         })
         .insert(UiElement {
             size: Size::new(300.0, 500.0),
-            scroll_state: UiStateDetails {
-                accepts_state: true,
-                ..Default::default()
-            },
             ..Default::default()
         })
         .insert(AnchoredUi {
-            x_percent: 1.0,
+            x_percent: 2.0,
             y_percent: 0.5,
             width_grow: None,
             height_grow: Some(1.0),
         })
-        .insert(TileInspector {})
-        .insert(UiLinearScroll::default());
+        .insert(DebugRoot {
+            log_panel: scroll_id,
+            input: input_id,
+        })
+        .insert(UiLinearScroll::default())
+        .insert_children(0, &[scroll_id, input_id]);
 
     events.send(ChangeViewTo(TilingKind::Square));
 }
